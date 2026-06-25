@@ -63,6 +63,18 @@ test('detects Rocket.Chat system messages', () => {
   assert.equal(event.isSystem, true);
 });
 
+
+test('does not treat Rocket.Chat room type as a system message', () => {
+  const event = extractRocketEvent({
+    text: '私聊里正常提问',
+    user_name: 'alice',
+    room_id: 'dm-room',
+    type: 'd'
+  }, { username: 'youtrack-bot', userId: 'bot-user-id' });
+
+  assert.equal(event.type, '');
+  assert.equal(event.isSystem, false);
+});
 test('verifies token from body or header', () => {
   assert.equal(verifyRocketRequest({ headers: {} }, { token: 'a' }, 'a'), true);
   assert.equal(verifyRocketRequest({ headers: { 'x-rocketchat-livechat-token': 'a' } }, {}, 'a'), true);
