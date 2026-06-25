@@ -5,6 +5,8 @@ loadDotEnv();
 function getString(name, fallback = '') {
   const value = process.env[name];
   if (value === undefined || value === null || value === '') return fallback;
+  // 以 < 开头的值是 .env.example 里未替换的占位符，视为未配置。
+  if (value.trimStart().startsWith('<')) return fallback;
   return value;
 }
 
