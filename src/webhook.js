@@ -63,12 +63,7 @@ export function extractRocketEvent(body, botIdentity = '') {
     message?._id ||
     '';
 
-  const type =
-    body.type ||
-    body.t ||
-    message?.type ||
-    message?.t ||
-    '';
+  const type = extractMessageType(body.t, message?.t, body.type, message?.type);
 
   const alias =
     body.alias ||
@@ -111,6 +106,16 @@ function extractMessage(body) {
     return body.message;
   }
   return undefined;
+}
+
+function extractMessageType(...candidates) {
+  const roomTypes = new Set(['d', 'c', 'p']);
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim();
+    if (!value || roomTypes.has(value)) continue;
+    return value;
+  }
+  return '';
 }
 
 function cleanTriggerWord(text, triggerWord) {
