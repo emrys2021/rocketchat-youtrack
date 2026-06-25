@@ -1,7 +1,7 @@
 services:
-  youtrack-rocket-agent:
+  youtrack-rocket-webhook:
     build: .
-    container_name: youtrack-rocket-agent
+    container_name: youtrack-rocket-webhook
     restart: unless-stopped
     env_file:
       - .env
