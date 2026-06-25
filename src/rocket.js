@@ -21,6 +21,24 @@ export class RocketClient {
     if (authToken) this.authToken = authToken;
   }
 
+  async getMe() {
+    if (!this.canPost()) {
+      throw new Error('Rocket.Chat bot credentials are not configured');
+    }
+
+    return fetchJson(
+      `${this.baseUrl}/api/v1/me`,
+      {
+        method: 'GET',
+        headers: {
+          'X-Auth-Token': this.authToken,
+          'X-User-Id': this.userId
+        }
+      },
+      this.timeoutMs
+    );
+  }
+
   async postMessage({ roomId, text, threadId = undefined, replyInThread = true }) {
     if (!this.canPost()) {
       throw new Error('Rocket.Chat bot credentials are not configured');

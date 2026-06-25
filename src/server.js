@@ -4,12 +4,21 @@ import { config, validateConfig } from './config.js';
 import { HttpError, readJsonBody, sendJson, sendText } from './http.js';
 import { isToolAllowed } from './mcp.js';
 import { buildRuntime } from './runtime.js';
+import { createLoopGuard } from './loop-guard.js';
 import { errorToMeta, log } from './logger.js';
 import { extractRocketEvent, shouldReplyViaBot, verifyRocketRequest } from './webhook.js';
 
 validateConfig();
 
 const { mcpClient, youtrackRestClient, rocketClient, agent } = buildRuntime();
+const loopGuard = createLoopGuard({
+  windowMs: config.rocket.loopWindowMs,
+  maxEvents: config.rocket.loopMaxEvents
+});
+let rocketBotIdentity = {
+  username: config.rocket.botUsername,
+  userId: config.rocket.userId
+};
 
 const server = http.createServer(async (req, res) => {
   const startedAt = Date.now();
@@ -89,15 +98,41 @@ async function handleRocketWebhook(req, res) {
     throw new HttpError(401, 'Invalid Rocket.Chat webhook token');
   }
 
-  const event = extractRocketEvent(body, config.rocket.botUsername);
-  if (event.isBot || !event.text) {
-    return sendJson(res, 200, { ok: true, ignored: true });
+  const event = extractRocketEvent(body, rocketBotIdentity);
+  const ignoreReason = getIgnoreReason(event);
+  if (ignoreReason) {
+    log('info', 'rocket_message_ignored', {
+      reason: ignoreReason,
+      roomId: event.roomId,
+      roomName: event.roomName,
+      userName: event.userName,
+      userId: event.userId,
+      messageId: event.messageId
+    });
+    return sendJson(res, 200, { ok: true, ignored: true, reason: ignoreReason });
+  }
+
+  const loopState = loopGuard.record(event);
+  if (loopState.blocked) {
+    log('error', 'rocket_loop_guard_tripped', {
+      roomId: event.roomId,
+      roomName: event.roomName,
+      userName: event.userName,
+      userId: event.userId,
+      messageId: event.messageId,
+      count: loopState.count,
+      windowMs: loopState.windowMs,
+      maxEvents: loopState.maxEvents,
+      recommendation: 'Check Rocket.Chat outgoing webhook trigger scope, user auto-reply settings, and ROCKET_BOT_USERNAME/ROCKET_USER_ID.'
+    });
+    return sendJson(res, 200, { ok: true, ignored: true, reason: 'loop_guard' });
   }
 
   log('info', 'rocket_question_received', {
     roomId: event.roomId,
     roomName: event.roomName,
     userName: event.userName,
+    userId: event.userId,
     messageId: event.messageId
   });
 
@@ -151,6 +186,50 @@ async function answerAndPost(event) {
   }
 }
 
+function getIgnoreReason(event) {
+  if (!event.text) return 'empty_text';
+  if (event.isBot) return 'bot_message';
+  if (event.isSystem) return 'system_message';
+  if (config.rocket.ignoreAutoReplies && event.isAutoReply) return 'auto_reply';
+  return '';
+}
+
+async function validateRocketBotIdentity() {
+  if (!rocketClient.canPost()) return;
+
+  try {
+    const me = await rocketClient.getMe();
+    const actualUser = me.user && typeof me.user === 'object' ? me.user : me;
+    const actualUserId = actualUser._id || actualUser.id || '';
+    const actualUsername = actualUser.username || '';
+
+    rocketBotIdentity = {
+      username: actualUsername || config.rocket.botUsername,
+      userId: actualUserId || config.rocket.userId
+    };
+
+    const usernameMismatch = config.rocket.botUsername && actualUsername && config.rocket.botUsername !== actualUsername;
+    const userIdMismatch = config.rocket.userId && actualUserId && config.rocket.userId !== actualUserId;
+
+    log(usernameMismatch || userIdMismatch ? 'warn' : 'info', 'rocket_bot_identity_checked', {
+      configuredUsername: config.rocket.botUsername,
+      actualUsername,
+      configuredUserId: config.rocket.userId,
+      actualUserId,
+      usernameMismatch,
+      userIdMismatch,
+      recommendation: usernameMismatch || userIdMismatch
+        ? 'Update ROCKET_BOT_USERNAME and ROCKET_USER_ID to match the Rocket.Chat token user.'
+        : undefined
+    });
+  } catch (error) {
+    log('warn', 'rocket_bot_identity_check_failed', {
+      ...errorToMeta(error),
+      recommendation: 'Check ROCKET_URL, ROCKET_USER_ID, and ROCKET_AUTH_TOKEN. Self-message filtering will fall back to configured values.'
+    });
+  }
+}
+
 function requireAdmin(req) {
   if (!config.adminToken) {
     throw new HttpError(403, 'ADMIN_TOKEN is not configured');
@@ -165,8 +244,12 @@ server.listen(config.port, () => {
     port: config.port,
     nodeEnv: config.nodeEnv,
     rocketBotReplies: rocketClient.canPost(),
-    youtrackRestWorkItems: youtrackRestClient.canFetchWorkItems()
+    youtrackRestWorkItems: youtrackRestClient.canFetchWorkItems(),
+    rocketLoopWindowMs: config.rocket.loopWindowMs,
+    rocketLoopMaxEvents: config.rocket.loopMaxEvents,
+    rocketIgnoreAutoReplies: config.rocket.ignoreAutoReplies
   });
+  void validateRocketBotIdentity();
 });
 
 process.on('SIGTERM', () => {

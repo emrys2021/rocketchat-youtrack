@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import WebSocket from 'ws';
 import { log, errorToMeta } from './logger.js';
+import { isAutoReplyText, isSystemMessageType } from './message-filters.js';
 
 /**
  * Rocket.Chat Realtime (DDP over WebSocket) client.
@@ -304,20 +305,25 @@ export function parseNotification(notification) {
   const text = payload.message?.msg || notification.text || '';
   const senderId = sender._id || '';
   const senderUsername = sender.username || '';
-  // type: 'd' 表示私信(direct message)，'c'/'p' 表示频道。
-  const isDirect = payload.type === 'd';
+  // roomType: 'd' 表示私信(direct message)，'c'/'p' 表示频道。
+  const roomType = payload.type || '';
+  const messageType = payload.message?.t || payload.t || notification.t || '';
+  const isDirect = roomType === 'd';
+  const rawText = String(text || '').trim();
 
-  if (!roomId || !text) return null;
+  if (!roomId || !rawText) return null;
 
   return {
     roomId,
     messageId,
-    text: String(text).trim(),
+    text: rawText,
     rawText: String(text),
     senderId,
     userName: senderUsername,
-    isDirect
+    roomType,
+    messageType,
+    isDirect,
+    isSystem: isSystemMessageType(messageType),
+    isAutoReply: isAutoReplyText(rawText)
   };
 }
-
-

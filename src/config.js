@@ -96,7 +96,10 @@ export const config = {
     replyInThread: getBoolean('ROCKET_REPLY_IN_THREAD', true),
     postProgress: getBoolean('ROCKET_POST_PROGRESS', true),
     messageMaxChars: getInteger('ROCKET_MESSAGE_MAX_CHARS', 3500),
-    timeoutMs: getInteger('ROCKET_TIMEOUT_MS', 15000)
+    timeoutMs: getInteger('ROCKET_TIMEOUT_MS', 15000),
+    ignoreAutoReplies: getBoolean('ROCKET_IGNORE_AUTO_REPLIES', true),
+    loopWindowMs: getInteger('ROCKET_LOOP_WINDOW_MS', 60000),
+    loopMaxEvents: getInteger('ROCKET_LOOP_MAX_EVENTS', 4)
   }
 };
 
@@ -133,4 +136,3 @@ export function validateConfig(mode = 'webhook') {
 export function hasRocketBotCredentials() {
   return Boolean(config.rocket.url && config.rocket.userId && config.rocket.authToken);
 }
-

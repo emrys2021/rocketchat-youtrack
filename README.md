@@ -29,7 +29,7 @@ Both modes share dependency wiring through `src/runtime.js` and reply through th
 1. The bot opens a WebSocket to `ws(s)://<rocket-host>/websocket` and completes the DDP `connect` handshake (`src/rocket-realtime.js`).
 2. It logs in with `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` (DDP login does not accept a Personal Access Token).
 3. It subscribes to `stream-notify-user` `<userId>/notification`, which Rocket.Chat pushes for **direct messages** and **channel @mentions** of the bot.
-4. `src/bot-runner.js` filters out the bot's own messages (loop guard), requires an `@youtrack-bot` mention in channels (direct messages need none), strips the mention, and calls `agent.answer()`.
+4. `src/bot-runner.js` filters out the bot's own messages, Rocket.Chat Auto-Reply/system messages, and loop-like repeated room events; it requires an `@youtrack-bot` mention in channels (direct messages need none), strips the mention, and calls `agent.answer()`.
 5. The answer is posted back to the original room/thread with the REST client, reusing message splitting and threaded replies.
 6. On disconnect it reconnects automatically with exponential backoff, then re-logs in and re-subscribes.
 
@@ -118,6 +118,13 @@ For **bot-login realtime mode** no webhook is needed. Instead:
 - invite the bot to any channel where it should answer; users mention it with `@youtrack-bot`, or message it directly
 
 Start it with `npm run start:bot`.
+
+Direct-message safety:
+
+- keep `ROCKET_IGNORE_AUTO_REPLIES=true` so Rocket.Chat user Auto-Reply messages are ignored
+- keep `ROCKET_BOT_USERNAME` and `ROCKET_USER_ID` aligned with the same bot account; bot-login logs `bot_rest_identity_checked` at startup and warns on mismatch
+- if `bot_loop_guard_tripped` or `rocket_loop_guard_tripped` appears in logs, check whether a user Auto-Reply is responding to bot messages and whether REST replies are posted by the expected bot account
+- `ROCKET_LOOP_WINDOW_MS` and `ROCKET_LOOP_MAX_EVENTS` control the per-room loop guard; defaults are `60000` and `4`
 
 ## Container Deployment
 

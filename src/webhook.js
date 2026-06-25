@@ -1,4 +1,5 @@
 import { hasRocketBotCredentials } from './config.js';
+import { isAutoReplyText, isSystemMessageType } from './message-filters.js';
 
 export function verifyRocketRequest(req, body, expectedToken) {
   if (!expectedToken) return true;
@@ -11,14 +12,26 @@ export function verifyRocketRequest(req, body, expectedToken) {
   return body?.token === expectedToken || headerToken === expectedToken;
 }
 
-export function extractRocketEvent(body, botUsername = '') {
+export function extractRocketEvent(body, botIdentity = '') {
   const message = extractMessage(body);
+  const botUsername = typeof botIdentity === 'string' ? botIdentity : botIdentity?.username || '';
+  const botUserId = typeof botIdentity === 'string' ? '' : botIdentity?.userId || '';
+
   const userName =
     body.user_name ||
     body.username ||
     body.user?.username ||
     message?.username ||
     message?.u?.username ||
+    '';
+
+  const userId =
+    body.user_id ||
+    body.userId ||
+    body.user?._id ||
+    body.user?.id ||
+    message?.u?._id ||
+    message?.user?._id ||
     '';
 
   const text =
@@ -50,19 +63,39 @@ export function extractRocketEvent(body, botUsername = '') {
     message?._id ||
     '';
 
-  const isBot =
+  const type =
+    body.type ||
+    body.t ||
+    message?.type ||
+    message?.t ||
+    '';
+
+  const alias =
+    body.alias ||
+    message?.alias ||
+    '';
+
+  const isBot = Boolean(
     Boolean(body.bot) ||
     Boolean(message?.bot) ||
-    (botUsername && userName === botUsername);
+    (botUsername && (userName === botUsername || alias === botUsername)) ||
+    (botUserId && userId === botUserId)
+  );
+
+  const rawText = String(text || '').trim();
 
   return {
-    text: cleanTriggerWord(text, body.trigger_word),
-    rawText: text,
+    text: cleanTriggerWord(rawText, body.trigger_word),
+    rawText,
     roomId,
     roomName,
     userName,
+    userId,
     messageId,
-    isBot
+    type,
+    isBot,
+    isSystem: isSystemMessageType(type),
+    isAutoReply: isAutoReplyText(rawText)
   };
 }
 

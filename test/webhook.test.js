@@ -20,13 +20,47 @@ test('extracts common outgoing webhook payload', () => {
   assert.equal(event.isBot, false);
 });
 
-test('detects bot loops', () => {
+test('detects bot loops by configured username', () => {
   const event = extractRocketEvent({
     text: 'hello',
     user_name: 'youtrack-bot'
   }, 'youtrack-bot');
 
   assert.equal(event.isBot, true);
+});
+
+test('detects bot loops by token user id', () => {
+  const event = extractRocketEvent({
+    text: 'hello',
+    user_name: 'youtrack-bot2',
+    user_id: 'bot-user-id'
+  }, { username: 'youtrack-bot', userId: 'bot-user-id' });
+
+  assert.equal(event.isBot, true);
+});
+
+test('detects Rocket.Chat auto-reply messages', () => {
+  const event = extractRocketEvent({
+    text: 'Hey, I received your message and will get back to you as soon as possible.',
+    user_name: 'alice',
+    room_id: 'dm-room'
+  }, { username: 'youtrack-bot', userId: 'bot-user-id' });
+
+  assert.equal(event.isAutoReply, true);
+  assert.equal(event.isBot, false);
+});
+
+test('detects Rocket.Chat system messages', () => {
+  const event = extractRocketEvent({
+    message: {
+      msg: 'user joined',
+      t: 'uj',
+      rid: 'GENERAL',
+      u: { username: 'alice', _id: 'user-id' }
+    }
+  }, { username: 'youtrack-bot', userId: 'bot-user-id' });
+
+  assert.equal(event.isSystem, true);
 });
 
 test('verifies token from body or header', () => {
