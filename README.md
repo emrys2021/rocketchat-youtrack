@@ -95,7 +95,7 @@ curl -s -X POST http://localhost:8088/ask \
 Review logs:
 
 ```bash
-docker logs --tail=200 youtrack-rocket-agent | grep -E 'tool_call|work_items_fetch|auto_enrich'
+docker logs --tail=200 youtrack-rocket-bot | grep -E 'tool_call|work_items_fetch|auto_enrich'
 ```
 
 ## Rocket.Chat Setup
