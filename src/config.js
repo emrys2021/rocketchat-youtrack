@@ -90,6 +90,7 @@ export const config = {
     userId: getString('ROCKET_USER_ID'),
     authToken: getString('ROCKET_AUTH_TOKEN'),
     botUsername: getString('ROCKET_BOT_USERNAME', 'youtrack-bot'),
+    botPassword: getString('ROCKET_BOT_PASSWORD'),
     replyInThread: getBoolean('ROCKET_REPLY_IN_THREAD', true),
     postProgress: getBoolean('ROCKET_POST_PROGRESS', true),
     messageMaxChars: getInteger('ROCKET_MESSAGE_MAX_CHARS', 3500),
@@ -97,7 +98,13 @@ export const config = {
   }
 };
 
-export function validateConfig() {
+/**
+ * 校验环境变量。两种运行模式要求不同：
+ *   - 'webhook'（默认，server.js）：依赖 outgoing webhook，要求 ROCKET_WEBHOOK_TOKEN。
+ *   - 'bot'（bot-runner.js）：直接登录 realtime，要求 ROCKET_URL + 登录凭据，
+ *     不需要 ROCKET_WEBHOOK_TOKEN。
+ */
+export function validateConfig(mode = 'webhook') {
   const missing = [];
 
   if (!config.llm.apiUrl) missing.push('LLM_API_URL');
@@ -105,7 +112,17 @@ export function validateConfig() {
   if (!config.llm.model) missing.push('LLM_MODEL');
   if (!config.mcp.url) missing.push('MCP_URL');
   if (!config.mcp.apiKey) missing.push('MCP_API_KEY');
-  if (!config.rocket.webhookToken) missing.push('ROCKET_WEBHOOK_TOKEN');
+
+  if (mode === 'bot') {
+    if (!config.rocket.url) missing.push('ROCKET_URL');
+    const hasToken = Boolean(config.rocket.authToken);
+    const hasPassword = Boolean(config.rocket.botUsername && config.rocket.botPassword);
+    if (!hasToken && !hasPassword) {
+      missing.push('ROCKET_AUTH_TOKEN (或 ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD)');
+    }
+  } else {
+    if (!config.rocket.webhookToken) missing.push('ROCKET_WEBHOOK_TOKEN');
+  }
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);

@@ -2,30 +2,14 @@ import http from 'node:http';
 import { URL } from 'node:url';
 import { config, validateConfig } from './config.js';
 import { HttpError, readJsonBody, sendJson, sendText } from './http.js';
-import { LlmClient } from './llm.js';
-import { McpHttpClient, isToolAllowed } from './mcp.js';
-import { RocketClient } from './rocket.js';
-import { YouTrackAgent } from './agent.js';
-import { YouTrackRestClient } from './youtrack-rest.js';
+import { isToolAllowed } from './mcp.js';
+import { buildRuntime } from './runtime.js';
 import { errorToMeta, log } from './logger.js';
 import { extractRocketEvent, shouldReplyViaBot, verifyRocketRequest } from './webhook.js';
 
 validateConfig();
 
-const llmClient = new LlmClient(config.llm);
-const mcpClient = new McpHttpClient({
-  endpoint: config.mcp.url,
-  apiKey: config.mcp.apiKey,
-  authHeader: config.mcp.authHeader,
-  authScheme: config.mcp.authScheme,
-  protocolVersion: config.mcp.protocolVersion,
-  timeoutMs: config.mcp.timeoutMs,
-  toolsCacheSeconds: config.mcp.toolsCacheSeconds,
-  resultMaxChars: config.mcp.resultMaxChars
-});
-const youtrackRestClient = new YouTrackRestClient(config.youtrack);
-const rocketClient = new RocketClient(config.rocket);
-const agent = new YouTrackAgent({ llmClient, mcpClient, youtrackRestClient, config });
+const { mcpClient, youtrackRestClient, rocketClient, agent } = buildRuntime();
 
 const server = http.createServer(async (req, res) => {
   const startedAt = Date.now();

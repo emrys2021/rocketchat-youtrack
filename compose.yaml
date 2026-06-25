@@ -1,9 +1,12 @@
+# bot-login (realtime) 模式：bot 账户直接登录 Rocket.Chat，通过 WebSocket (DDP)
+# 订阅私信(DM)和频道 @ 提及，无需 outgoing webhook。
+# 它是主动连出去的客户端，没有对外 HTTP 服务，所以不暴露端口。
+# 启动：docker compose up -d --build
 services:
-  youtrack-rocket-agent:
+  youtrack-rocket-bot:
     build: .
-    container_name: youtrack-rocket-agent
+    container_name: youtrack-rocket-bot
     restart: unless-stopped
+    command: node src/bot-runner.js
     env_file:
       - .env
-    ports:
-      - "8088:8080"

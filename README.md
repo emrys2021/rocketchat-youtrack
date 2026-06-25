@@ -2,7 +2,18 @@
 
 This service receives Rocket.Chat messages, asks an OpenAI-compatible LLM to search YouTrack through MCP, enriches candidate issues with read-only YouTrack REST work items, and posts the final answer back to Rocket.Chat as a bot.
 
-## Flow
+## Two Modes
+
+The same agent logic (`src/agent.js`) can be driven two ways. Pick one, or run both side by side.
+
+| Mode | Entry | How messages arrive | Best for |
+| --- | --- | --- | --- |
+| Outgoing webhook (default) | `npm start` (`src/server.js`) | Rocket.Chat outgoing webhook hits `POST /webhooks/rocket` | Stable production setup |
+| bot-login realtime | `npm run start:bot` (`src/bot-runner.js`) | Bot logs in and subscribes over WebSocket (DDP) | No webhook config; direct messages + mentions |
+
+Both modes share dependency wiring through `src/runtime.js` and reply through the same REST `chat.sendMessage` client (`src/rocket.js`).
+
+## Flow (outgoing webhook mode)
 
 1. User mentions the bot or triggers an outgoing webhook in Rocket.Chat.
 2. Rocket.Chat posts the message to `POST /webhooks/rocket`.
@@ -12,6 +23,15 @@ This service receives Rocket.Chat messages, asks an OpenAI-compatible LLM to sea
 6. The LLM calls `search_issues`, then the backend auto-enriches top candidate issues with `get_issue`, `get_issue_comments`, and read-only REST work items.
 7. The LLM writes a final answer in Simplified Chinese, separating evidence from description, comments, and work items.
 8. The service posts the answer to Rocket.Chat with `chat.sendMessage`.
+
+## Flow (bot-login realtime mode)
+
+1. The bot opens a WebSocket to `ws(s)://<rocket-host>/websocket` and completes the DDP `connect` handshake (`src/rocket-realtime.js`).
+2. It logs in with `ROCKET_AUTH_TOKEN` (resume token, recommended) or with `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD`.
+3. It subscribes to `stream-notify-user` `<userId>/notification`, which Rocket.Chat pushes for **direct messages** and **channel @mentions** of the bot.
+4. `src/bot-runner.js` filters out the bot's own messages (loop guard), requires an `@youtrack-bot` mention in channels (direct messages need none), strips the mention, and calls `agent.answer()`.
+5. The answer is posted back to the original room/thread with the REST client, reusing message splitting and threaded replies.
+6. On disconnect it reconnects automatically with exponential backoff, then re-logs in and re-subscribes.
 
 ## Required Configuration
 
@@ -80,7 +100,7 @@ docker logs --tail=200 youtrack-rocket-agent | grep -E 'tool_call|work_items_fet
 
 ## Rocket.Chat Setup
 
-Recommended setup:
+Recommended setup for **outgoing webhook mode**:
 
 - create a bot user, for example `youtrack-bot`
 - create a personal access token for that bot
@@ -89,13 +109,26 @@ Recommended setup:
 
 The bot user must be in the target channel to post replies.
 
+For **bot-login realtime mode** no webhook is needed. Instead:
+
+- create the same bot user, for example `youtrack-bot`
+- create a Personal Access Token and set `ROCKET_AUTH_TOKEN` + `ROCKET_USER_ID` (recommended), or set `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD`
+- set `ROCKET_URL` to the Rocket.Chat base URL (the WebSocket URL is derived as `<url>/websocket`)
+- invite the bot to any channel where it should answer; users mention it with `@youtrack-bot`, or message it directly
+
+Start it with `npm run start:bot`.
+
 ## Container Deployment
+
+This branch (`bot-login`) ships the realtime bot. The `outgoing-webhook` branch ships the webhook server; each branch has its own `compose.yaml`.
 
 ```bash
 cp .env.example .env
 vim .env
 docker compose up -d --build
 ```
+
+`compose.yaml` here runs `node src/bot-runner.js`. The bot dials out over WebSocket, so it exposes no port.
 
 When YouTrack or Rocket.Chat is on another server, use real IP addresses or DNS names in `MCP_URL`, `YOUTRACK_BASE_URL`, and `ROCKET_URL`. Do not use Docker service names unless the containers share a Docker network.
 

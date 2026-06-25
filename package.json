@@ -6,9 +6,13 @@
   "description": "Rocket.Chat webhook backend that lets an LLM search YouTrack through MCP.",
   "scripts": {
     "start": "node src/server.js",
+    "start:bot": "node src/bot-runner.js",
     "test": "node --test"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
   }
 }
