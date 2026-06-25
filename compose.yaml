@@ -1,0 +1,9 @@
+services:
+  youtrack-rocket-agent:
+    build: .
+    container_name: youtrack-rocket-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8088:8080"

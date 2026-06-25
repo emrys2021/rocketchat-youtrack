@@ -1,0 +1,14 @@
+{
+  "name": "youtrack-rocket-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Rocket.Chat webhook backend that lets an LLM search YouTrack through MCP.",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
