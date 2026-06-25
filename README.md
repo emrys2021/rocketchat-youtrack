@@ -27,7 +27,7 @@ Both modes share dependency wiring through `src/runtime.js` and reply through th
 ## Flow (bot-login realtime mode)
 
 1. The bot opens a WebSocket to `ws(s)://<rocket-host>/websocket` and completes the DDP `connect` handshake (`src/rocket-realtime.js`).
-2. It logs in with `ROCKET_AUTH_TOKEN` (resume token, recommended) or with `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD`.
+2. It logs in with `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` (DDP login does not accept a Personal Access Token).
 3. It subscribes to `stream-notify-user` `<userId>/notification`, which Rocket.Chat pushes for **direct messages** and **channel @mentions** of the bot.
 4. `src/bot-runner.js` filters out the bot's own messages (loop guard), requires an `@youtrack-bot` mention in channels (direct messages need none), strips the mention, and calls `agent.answer()`.
 5. The answer is posted back to the original room/thread with the REST client, reusing message splitting and threaded replies.
@@ -112,7 +112,8 @@ The bot user must be in the target channel to post replies.
 For **bot-login realtime mode** no webhook is needed. Instead:
 
 - create the same bot user, for example `youtrack-bot`
-- create a Personal Access Token and set `ROCKET_AUTH_TOKEN` + `ROCKET_USER_ID` (recommended), or set `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD`
+- set `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` for the WebSocket (DDP) login. A Personal Access Token does **not** work for DDP login (it returns `User not found [401]`); it is only used for REST replies.
+- create a Personal Access Token for that bot and set `ROCKET_USER_ID` + `ROCKET_AUTH_TOKEN` so the bot can post replies via REST
 - set `ROCKET_URL` to the Rocket.Chat base URL (the WebSocket URL is derived as `<url>/websocket`)
 - invite the bot to any channel where it should answer; users mention it with `@youtrack-bot`, or message it directly
 

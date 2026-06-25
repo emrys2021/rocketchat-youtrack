@@ -163,11 +163,10 @@ export class RocketRealtimeClient extends EventEmitter {
   }
 
   login() {
-    // 优先使用 resume token（更稳定，推荐 Personal Access Token）；
-    // 否则用 username + sha256(password)。
-    if (this.authToken) {
-      return this.callMethod('login', [{ resume: this.authToken }]);
-    }
+    // 优先使用 username + sha256(password) 登录。
+    // 注意：DDP login 的 resume 分支只接受 Meteor login token，
+    // 不接受 Personal Access Token（PAT）——用 PAT 会报 "User not found [401]"。
+    // PAT 只用于 REST 回复（X-Auth-Token），不要塞进 ROCKET_AUTH_TOKEN 当 resume 用。
     if (this.username && this.password) {
       const digest = crypto.createHash('sha256').update(this.password).digest('hex');
       return this.callMethod('login', [
@@ -177,7 +176,11 @@ export class RocketRealtimeClient extends EventEmitter {
         }
       ]);
     }
-    return Promise.reject(new Error('Realtime login requires ROCKET_AUTH_TOKEN or ROCKET_BOT_USERNAME/ROCKET_BOT_PASSWORD'));
+    // 兜底：仅当未提供密码时，才把 ROCKET_AUTH_TOKEN 当作 login token 走 resume。
+    if (this.authToken) {
+      return this.callMethod('login', [{ resume: this.authToken }]);
+    }
+    return Promise.reject(new Error('Realtime login requires ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (recommended), or a Meteor login token in ROCKET_AUTH_TOKEN'));
   }
 
   async subscribeNotifications() {
