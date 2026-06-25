@@ -25,7 +25,9 @@ export class RocketRealtimeClient extends EventEmitter {
     this.username = options.username || '';
     this.password = options.password || '';
     this.heartbeatMs = options.heartbeatMs || 25000;
-    this.maxReconnectMs = options.maxReconnectMs || 30000;
+    // 退避上限给到 60 秒：遇到 error-login-blocked-for-ip 这类登录限流时，
+    // 最长 60 秒才撞一次，避免持续触发封锁。
+    this.maxReconnectMs = options.maxReconnectMs || 60000;
 
     this.ws = null;
     this.connected = false;
@@ -94,7 +96,7 @@ export class RocketRealtimeClient extends EventEmitter {
   scheduleReconnect() {
     if (this.stopped) return;
     this.reconnectAttempts += 1;
-    const delay = Math.min(this.maxReconnectMs, 1000 * 2 ** Math.min(this.reconnectAttempts, 5));
+    const delay = Math.min(this.maxReconnectMs, 1000 * 2 ** Math.min(this.reconnectAttempts, 6));
     log('info', 'realtime_reconnect_scheduled', { attempt: this.reconnectAttempts, delayMs: delay });
     setTimeout(() => {
       if (!this.stopped) this.connect();
@@ -140,20 +142,23 @@ export class RocketRealtimeClient extends EventEmitter {
 
   async onConnected(payload) {
     this.connected = true;
-    this.reconnectAttempts = 0;
     this.startHeartbeat();
     log('info', 'realtime_connected', { session: payload.session });
 
     try {
       const result = await this.login();
       this.loggedInUserId = result?.id || this.userId;
+      // 只有登录成功才算真正恢复，这时才清零退避计数。
+      // 否则登录一直失败时，退避会被反复归零、永远卡在最小间隔，
+      // 反而把 Rocket.Chat 的登录限流（error-login-blocked-for-ip）一直续期。
+      this.reconnectAttempts = 0;
       log('info', 'realtime_logged_in', { userId: this.loggedInUserId });
 
       await this.subscribeNotifications();
       this.emit('ready', { userId: this.loggedInUserId });
     } catch (error) {
       log('error', 'realtime_login_failed', errorToMeta(error));
-      // 登录失败也走重连流程（凭据可能临时不可用）。
+      // 登录失败走带退避的重连：保留 reconnectAttempts，让间隔逐步拉长。
       try {
         this.ws?.close();
       } catch {
