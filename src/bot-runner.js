@@ -35,6 +35,8 @@ const realtime = new RocketRealtimeClient({
 
 // 登录后拿到的 bot 用户 id，用于过滤自己发出的消息，避免回复循环。
 let botUserId = config.rocket.userId || '';
+const seenMessageIds = new Map();
+const maxSeenMessages = 500;
 
 realtime.on('ready', ({ userId, authToken }) => {
   if (userId) botUserId = userId;
@@ -64,12 +66,16 @@ async function handleIncoming(event) {
   if (event.senderId && botUserId && event.senderId === botUserId) return;
   if (config.rocket.botUsername && event.userName === config.rocket.botUsername) return;
 
-  // 2. 判断是否需要响应：私信无条件响应；频道消息要求 @ 提及 bot。
+  // 2. 对通知做去重，避免 Rocket.Chat 通知重发或重连期间重复回复。
+  if (hasSeenMessage(event)) return;
+  rememberMessage(event);
+
+  // 3. 判断是否需要响应：私信无条件响应；频道消息要求 @ 提及 bot。
   const mention = config.rocket.botUsername ? `@${config.rocket.botUsername}` : '';
   const isMentioned = mention && event.text.includes(mention);
   if (!event.isDirect && !isMentioned) return;
 
-  // 3. 清理掉 @ 提及前缀，得到纯净问题。
+  // 4. 清理掉 @ 提及前缀，得到纯净问题。
   const question = stripMention(event.text, mention).trim();
   if (!question) return;
 
@@ -120,6 +126,28 @@ function stripMention(text, mention) {
   return text.split(mention).join(' ');
 }
 
+function getMessageKey(event) {
+  if (event.messageId) return event.messageId;
+  return [event.roomId, event.userName, event.rawText || event.text].join(':');
+}
+
+function hasSeenMessage(event) {
+  return seenMessageIds.has(getMessageKey(event));
+}
+
+function rememberMessage(event) {
+  seenMessageIds.set(getMessageKey(event), Date.now());
+  if (seenMessageIds.size <= maxSeenMessages) return;
+
+  const keysToDelete = seenMessageIds.size - maxSeenMessages;
+  let deleted = 0;
+  for (const key of seenMessageIds.keys()) {
+    seenMessageIds.delete(key);
+    deleted += 1;
+    if (deleted >= keysToDelete) break;
+  }
+}
+
 realtime.start();
 
 log('info', 'bot_runner_started', {
@@ -140,3 +168,4 @@ process.on('SIGINT', () => {
   realtime.stop();
   process.exit(0);
 });
+

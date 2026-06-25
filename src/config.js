@@ -117,12 +117,9 @@ export function validateConfig(mode = 'webhook') {
 
   if (mode === 'bot') {
     if (!config.rocket.url) missing.push('ROCKET_URL');
-    // realtime 登录优先用账号密码。ROCKET_AUTH_TOKEN 只有在它是 Meteor login token
-    // 时才能作为 resume 兜底；Personal Access Token 不行（会报 User not found）。
     const hasPassword = Boolean(config.rocket.botUsername && config.rocket.botPassword);
-    const hasToken = Boolean(config.rocket.authToken);
-    if (!hasPassword && !hasToken) {
-      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (或 Meteor login token 形式的 ROCKET_AUTH_TOKEN)');
+    if (!hasPassword) {
+      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD');
     }
   } else {
     if (!config.rocket.webhookToken) missing.push('ROCKET_WEBHOOK_TOKEN');
@@ -136,3 +133,4 @@ export function validateConfig(mode = 'webhook') {
 export function hasRocketBotCredentials() {
   return Boolean(config.rocket.url && config.rocket.userId && config.rocket.authToken);
 }
+

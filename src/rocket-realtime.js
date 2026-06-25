@@ -28,6 +28,7 @@ export class RocketRealtimeClient extends EventEmitter {
     // 退避上限给到 60 秒：遇到 error-login-blocked-for-ip 这类登录限流时，
     // 最长 60 秒才撞一次，避免持续触发封锁。
     this.maxReconnectMs = options.maxReconnectMs || 60000;
+    this.methodTimeoutMs = options.methodTimeoutMs || 15000;
 
     this.ws = null;
     this.connected = false;
@@ -53,6 +54,7 @@ export class RocketRealtimeClient extends EventEmitter {
   stop() {
     this.stopped = true;
     this.clearHeartbeat();
+    this.rejectPendingMethods(new Error('Realtime client stopped'));
     if (this.ws) {
       try {
         this.ws.close();
@@ -64,6 +66,7 @@ export class RocketRealtimeClient extends EventEmitter {
 
   connect() {
     log('info', 'realtime_connecting', { url: this.websocketUrl });
+    this.rejectPendingMethods(new Error('Realtime reconnecting'));
     this.connected = false;
     this.loggedInUserId = '';
     this.subscriptions.clear();
@@ -81,14 +84,17 @@ export class RocketRealtimeClient extends EventEmitter {
     });
 
     ws.on('close', (code, reason) => {
+      if (this.ws !== ws) return;
       log('warn', 'realtime_closed', { code, reason: reason?.toString() });
       this.clearHeartbeat();
+      this.rejectPendingMethods(new Error(`Realtime connection closed: ${code}`));
       this.connected = false;
       this.emit('disconnected');
       this.scheduleReconnect();
     });
 
     ws.on('error', (error) => {
+      if (this.ws !== ws) return;
       log('error', 'realtime_socket_error', errorToMeta(error));
       // 'close' 会随后触发，由它统一处理重连。
     });
@@ -128,7 +134,10 @@ export class RocketRealtimeClient extends EventEmitter {
         this.onChanged(payload);
         break;
       case 'ready':
+        break;
       case 'nosub':
+        log('warn', 'realtime_subscription_failed', { id: payload.id, error: payload.error });
+        break;
       case 'added':
       case 'removed':
       case 'updated':
@@ -212,7 +221,12 @@ export class RocketRealtimeClient extends EventEmitter {
   callMethod(method, params = []) {
     const id = crypto.randomUUID();
     return new Promise((resolve, reject) => {
-      this.pendingMethods.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pendingMethods.delete(id);
+        reject(new Error(`DDP method timed out: ${method}`));
+      }, this.methodTimeoutMs);
+
+      this.pendingMethods.set(id, { resolve, reject, timer });
       this.send({ msg: 'method', method, params, id });
     });
   }
@@ -221,11 +235,20 @@ export class RocketRealtimeClient extends EventEmitter {
     const pending = this.pendingMethods.get(payload.id);
     if (!pending) return;
     this.pendingMethods.delete(payload.id);
+    clearTimeout(pending.timer);
     if (payload.error) {
       pending.reject(new Error(payload.error.message || payload.error.reason || 'DDP method error'));
     } else {
       pending.resolve(payload.result);
     }
+  }
+
+  rejectPendingMethods(error) {
+    for (const pending of this.pendingMethods.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pendingMethods.clear();
   }
 
   onChanged(payload) {
@@ -296,3 +319,5 @@ export function parseNotification(notification) {
     isDirect
   };
 }
+
+
