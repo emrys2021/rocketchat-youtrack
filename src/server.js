@@ -120,7 +120,7 @@ async function answerAndPost(event) {
         roomId: event.roomId,
         threadId: event.messageId,
         replyInThread: config.rocket.replyInThread,
-        text: '收到，我正在 YouTrack 中检索相似 issue。'
+        text: '收到，正在处理，请稍候…'
       });
     }
 

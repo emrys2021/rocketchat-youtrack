@@ -89,7 +89,7 @@ async function handleIncoming(event) {
 
   try {
     if (config.rocket.postProgress) {
-      await safePost(replyContext, '收到，我正在 YouTrack 中检索相似 issue。');
+      await safePost(replyContext, '收到，正在处理，请稍候…');
     }
 
     const answer = await agent.answer(question, {
