@@ -1,7 +1,7 @@
 import { parseToolArguments } from './llm.js';
 import { toLlmTools } from './mcp.js';
 import { log } from './logger.js';
-import { truncateText } from './text.js';
+import { normalizeRocketMarkdown, truncateText } from './text.js';
 import { formatWorkItems } from './youtrack-rest.js';
 
 const SYSTEM_PROMPT = [
@@ -14,6 +14,7 @@ const SYSTEM_PROMPT = [
   'When answering, write in Simplified Chinese.',
   'Explain from the user business scenario: what they are seeing, which issues look related, why, and what to check next.',
   'For solutions, explicitly separate evidence found in description, comments, and work items. If work items or comments do not contain a solution, say that clearly.',
+  'Rocket.Chat formatting rules: use short headings and bullet lists; do not use Markdown tables. For issue lists, prefer list items like - [ISSUE-ID](url) | title | status | owner. If aligned columns are truly necessary, use a fenced text code block instead of a Markdown table.',
   'Prefer concise answers. Include issue id, title, status, project, and URL when available.',
   'If results are weak, say so and provide better search keywords.'
 ].join('\n');
@@ -65,7 +66,7 @@ export class YouTrackAgent {
           });
           continue;
         }
-        return assistantMessage.content || '没有生成可用回答。';
+        return normalizeRocketMarkdown(assistantMessage.content || '没有生成可用回答。');
       }
 
       for (const toolCall of toolCalls) {
@@ -115,7 +116,7 @@ export class YouTrackAgent {
     });
 
     const finalMessage = await this.llm.chat(messages);
-    return finalMessage.content || '工具调用已达到上限，但没有生成可用回答。';
+    return normalizeRocketMarkdown(finalMessage.content || '工具调用已达到上限，但没有生成可用回答。');
   }
 
   async enrichToolResult(toolName, args, content) {
@@ -264,3 +265,4 @@ export function extractIssueIds(text) {
 
   return [...ids];
 }
+
