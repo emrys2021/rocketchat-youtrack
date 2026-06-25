@@ -36,9 +36,23 @@ const realtime = new RocketRealtimeClient({
 // 登录后拿到的 bot 用户 id，用于过滤自己发出的消息，避免回复循环。
 let botUserId = config.rocket.userId || '';
 
-realtime.on('ready', ({ userId }) => {
+realtime.on('ready', ({ userId, authToken }) => {
   if (userId) botUserId = userId;
-  log('info', 'bot_runner_ready', { userId: botUserId, botUsername: config.rocket.botUsername });
+
+  // 没有单独配置 PAT（ROCKET_USER_ID / ROCKET_AUTH_TOKEN）时，
+  // 用 realtime 登录返回的 userId/token 兜底，让 bot 仍能通过 REST 发回复。
+  if (!rocketClient.canPost()) {
+    rocketClient.setCredentials({ userId, authToken });
+    if (rocketClient.canPost()) {
+      log('info', 'bot_runner_using_login_token', { userId });
+    }
+  }
+
+  log('info', 'bot_runner_ready', {
+    userId: botUserId,
+    botUsername: config.rocket.botUsername,
+    canPost: rocketClient.canPost()
+  });
 });
 
 realtime.on('message', (event) => {

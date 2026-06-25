@@ -14,6 +14,13 @@ export class RocketClient {
     return Boolean(this.baseUrl && this.userId && this.authToken);
   }
 
+  // 运行时回填回复凭据。bot-login 模式下若未配置 PAT，
+  // 用 realtime 登录返回的 userId/token 兜底，使 bot 仍能发回复。
+  setCredentials({ userId, authToken }) {
+    if (userId) this.userId = userId;
+    if (authToken) this.authToken = authToken;
+  }
+
   async postMessage({ roomId, text, threadId = undefined, replyInThread = true }) {
     if (!this.canPost()) {
       throw new Error('Rocket.Chat bot credentials are not configured');

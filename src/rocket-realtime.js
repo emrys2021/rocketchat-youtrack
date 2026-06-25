@@ -32,6 +32,7 @@ export class RocketRealtimeClient extends EventEmitter {
     this.ws = null;
     this.connected = false;
     this.loggedInUserId = '';
+    this.loginToken = '';
     this.pendingMethods = new Map();
     this.subscriptions = new Set();
     this.reconnectAttempts = 0;
@@ -148,6 +149,9 @@ export class RocketRealtimeClient extends EventEmitter {
     try {
       const result = await this.login();
       this.loggedInUserId = result?.id || this.userId;
+      // DDP login 成功会返回 { id, token, tokenExpires }。
+      // 这个 token 可用作 REST 的 X-Auth-Token，没有单独配置 PAT 时拿它来发回复。
+      this.loginToken = result?.token || '';
       // 只有登录成功才算真正恢复，这时才清零退避计数。
       // 否则登录一直失败时，退避会被反复归零、永远卡在最小间隔，
       // 反而把 Rocket.Chat 的登录限流（error-login-blocked-for-ip）一直续期。
@@ -155,7 +159,7 @@ export class RocketRealtimeClient extends EventEmitter {
       log('info', 'realtime_logged_in', { userId: this.loggedInUserId });
 
       await this.subscribeNotifications();
-      this.emit('ready', { userId: this.loggedInUserId });
+      this.emit('ready', { userId: this.loggedInUserId, authToken: this.loginToken });
     } catch (error) {
       log('error', 'realtime_login_failed', errorToMeta(error));
       // 登录失败走带退避的重连：保留 reconnectAttempts，让间隔逐步拉长。
