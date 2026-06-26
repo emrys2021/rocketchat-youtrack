@@ -8,8 +8,13 @@ export class RocketClient {
     this.authToken = options.authToken;
     this.messageMaxChars = options.messageMaxChars || 3500;
     this.timeoutMs = options.timeoutMs || 15000;
-    // roomId → 房间类型('c'/'p'/'d'/'l') 缓存；房间类型不变，查一次即可。
+    // roomId → { type, expires } 缓存。
+    //   - 成功：type 为房间类型('c'/'p'/'d'/'l')，expires=0 表示永不过期（房间类型不变）。
+    //   - 失败：type 为 ''，带短 TTL 的负缓存，避免“失败房间 + 大流量”下每条消息都重查 rooms.info。
+    // 加上限防止房间数无限增长导致内存泄漏（尤其私信房间会随用户数增长）。
     this._roomTypeCache = new Map();
+    this._roomTypeCacheMax = options.roomTypeCacheMax || 5000;
+    this._roomTypeNegativeTtlMs = options.roomTypeNegativeTtlMs || 60000;
   }
 
   canPost() {
@@ -45,36 +50,64 @@ export class RocketClient {
    * 查询房间类型（'c' 频道 / 'p' 私有组 / 'd' 私信 / 'l' livechat）。
    *
    * stream-room-messages 推送的消息体不含房间类型，需要用 REST rooms.info 补齐。
-   * 房间类型不会变，按 roomId 缓存，避免每条消息都查一次。
+   * 成功结果永久缓存（房间类型不变）；失败/空结果按短 TTL 负缓存，避免“失败房间 +
+   * 大流量”下每条消息都重打 rooms.info（REST 请求放大）。
    *
    * @param {string} roomId
-   * @returns {Promise<string>} 房间类型字母；查询失败返回空字符串。
+   * @returns {Promise<string>} 房间类型字母；查询失败或未知返回空字符串。
    */
   async getRoomType(roomId) {
     if (!roomId) return '';
-    if (this._roomTypeCache.has(roomId)) {
-      return this._roomTypeCache.get(roomId);
+
+    const cached = this._roomTypeCache.get(roomId);
+    if (cached && (cached.expires === 0 || cached.expires > Date.now())) {
+      return cached.type;
     }
+
     if (!this.canPost()) {
       throw new Error('Rocket.Chat bot credentials are not configured');
     }
 
     const url = `${this.baseUrl}/api/v1/rooms.info?roomId=${encodeURIComponent(roomId)}`;
-    const result = await fetchJson(
-      url,
-      {
-        method: 'GET',
-        headers: {
-          'X-Auth-Token': this.authToken,
-          'X-User-Id': this.userId
-        }
-      },
-      this.timeoutMs
-    );
+    let roomType = '';
+    try {
+      const result = await fetchJson(
+        url,
+        {
+          method: 'GET',
+          headers: {
+            'X-Auth-Token': this.authToken,
+            'X-User-Id': this.userId
+          }
+        },
+        this.timeoutMs
+      );
+      roomType = result?.room?.t || '';
+    } catch (error) {
+      // 查询失败：写负缓存抑制重查，再把错误抛给上层记录/降级。
+      this._setRoomTypeCache(roomId, '', this._roomTypeNegativeTtlMs);
+      throw error;
+    }
 
-    const roomType = result?.room?.t || '';
-    if (roomType) this._roomTypeCache.set(roomId, roomType);
+    // 成功且拿到类型 → 永久缓存；成功但类型为空（异常响应）→ 负缓存短期抑制。
+    this._setRoomTypeCache(roomId, roomType, roomType ? 0 : this._roomTypeNegativeTtlMs);
     return roomType;
+  }
+
+  /**
+   * 写入房间类型缓存，并在超过上限时淘汰最早写入的一条（FIFO），防止内存无限增长。
+   * @param {string} roomId
+   * @param {string} type 房间类型；空串表示负缓存。
+   * @param {number} ttlMs 0 表示永不过期。
+   */
+  _setRoomTypeCache(roomId, type, ttlMs) {
+    // 先删后加，确保更新的条目排到 Map 末尾，淘汰时优先删最早的。
+    this._roomTypeCache.delete(roomId);
+    this._roomTypeCache.set(roomId, { type, expires: ttlMs ? Date.now() + ttlMs : 0 });
+    if (this._roomTypeCache.size > this._roomTypeCacheMax) {
+      const oldest = this._roomTypeCache.keys().next().value;
+      if (oldest !== undefined) this._roomTypeCache.delete(oldest);
+    }
   }
 
   async postMessage({ roomId, text, threadId = undefined, replyInThread = true }) {

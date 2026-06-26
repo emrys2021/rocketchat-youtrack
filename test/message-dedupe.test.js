@@ -39,3 +39,13 @@ test('caps remembered entries', () => {
   assert.equal(deduper.size(1000), 2);
   assert.equal(deduper.checkAndRemember('msg1', 1000).duplicate, false);
 });
+
+test('checks remembered ids without mutating state', () => {
+  const deduper = createMessageDeduper({ ttlMs: 1000, maxEntries: 10 });
+  assert.equal(deduper.has('m1'), false);
+  assert.equal(deduper.size(), 0);
+
+  assert.equal(deduper.checkAndRemember('m1').duplicate, false);
+  assert.equal(deduper.has('m1'), true);
+  assert.equal(deduper.size(), 1);
+});

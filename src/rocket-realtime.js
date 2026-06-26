@@ -9,10 +9,16 @@ import { isAutoReplyText, isSystemMessageType } from './message-filters.js';
  *
  * 负责：
  *   1. 连接 ws(s)://<host>/websocket，完成 DDP connect 握手；
- *   2. 用 username/password 或显式的 DDP resume token 完成 DDP login；
- *   3. 订阅 stream-room-messages 的 __my_messages__ 通配流（覆盖私信 DM 和频道）；
+ *   2. 用 username/password 或 resume token（PAT）完成 DDP login，登录成功后 emit 'ready'；
+ *   3. 等上层确认 bot 身份后，由上层选择订阅 notification、rooms-changed 探针，
+ *      或 stream-room-messages 的 __my_messages__ 可靠消息流；
  *   4. 把收到的新消息以 'message' 事件抛给上层（bot-runner）；
  *   5. 断线后按指数退避自动重连。
+ *
+ * 安全设计：登录后不自动订阅。auto 模式会先走 notification 窄通道，必要时切到
+ * __my_messages__；因为 __my_messages__ 会把 bot 自己发的回复也推回来，必须先确认
+ * bot 自身身份才能正确过滤自消息，否则会形成 bot ↔ bot 私信死循环。
+ * 订阅时机由上层在身份确认成功后控制（见 bot-runner.js 的身份门禁）。
  *
  * 只读 / 接收用途。回复仍然通过 REST 的 RocketClient.postMessage 发送，
  * 这样可以复用现有的分段发送与线程回复逻辑。
@@ -37,6 +43,9 @@ export class RocketRealtimeClient extends EventEmitter {
     this.loginToken = '';
     this.pendingMethods = new Map();
     this.subscriptions = new Set();
+    this.roomMessagesSubscribed = false;
+    this.notificationSubscribed = false;
+    this.roomsChangedSubscribed = false;
     this.reconnectAttempts = 0;
     this.stopped = false;
     this.heartbeatTimer = null;
@@ -71,6 +80,9 @@ export class RocketRealtimeClient extends EventEmitter {
     this.connected = false;
     this.loggedInUserId = '';
     this.subscriptions.clear();
+    this.roomMessagesSubscribed = false;
+    this.notificationSubscribed = false;
+    this.roomsChangedSubscribed = false;
 
     const ws = new WebSocket(this.websocketUrl);
     this.ws = ws;
@@ -168,7 +180,9 @@ export class RocketRealtimeClient extends EventEmitter {
       this.reconnectAttempts = 0;
       log('info', 'realtime_logged_in', { userId: this.loggedInUserId });
 
-      await this.subscribeNotifications();
+      // 注意：登录成功后【不】立即订阅消息流。订阅由上层（bot-runner）在确认
+      // bot 自身身份（/api/v1/me）成功后，显式调用 subscribeToMessages() 触发。
+      // 这样可避免“身份未确认就开始收消息”导致认不出自己发的回复、引发死循环。
       this.emit('ready', { userId: this.loggedInUserId, authToken: this.loginToken });
     } catch (error) {
       log('error', 'realtime_login_failed', errorToMeta(error));
@@ -203,17 +217,73 @@ export class RocketRealtimeClient extends EventEmitter {
     return Promise.reject(new Error('Realtime login requires ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD, or a resume token (PAT or login authToken) in resumeToken'));
   }
 
-  async subscribeNotifications() {
-    const uid = this.loggedInUserId;
-    if (!uid) throw new Error('Cannot subscribe before login resolves a user id');
-
-    // 订阅 stream-room-messages 的 __my_messages__ 通配流：Rocket.Chat 会把 bot 有权访问的
-    // 所有房间（私信 DM + 频道）的新消息推过来，只校验 canAccessRoom，不依赖 statusConnection
-    // 和用户通知偏好。这解决了部分版本（如 6.2.x）DM 不触发 stream-notify-user/notification
-    // 的问题（presence 异步更新导致 statusConnection 仍为 offline，notification 被跳过）。
-    this.subscribe('stream-room-messages', ['__my_messages__', { useCollection: false, args: [] }]);
+  /**
+   * 订阅 Rocket.Chat 用户通知流。notification 是窄通道：只推送 Rocket.Chat 认为
+   * 应该提醒当前用户的消息，接收范围小，但部分版本/状态下 DM 可能不会触发。
+   */
+  subscribeToNotifications(userId = this.loggedInUserId) {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      log('warn', 'realtime_subscribe_skipped', { reason: 'socket_not_open', stream: 'notification' });
+      return false;
+    }
+    if (!userId) {
+      log('warn', 'realtime_subscribe_skipped', { reason: 'missing_user_id', stream: 'notification' });
+      return false;
+    }
+    if (!this.notificationSubscribed) {
+      this.subscribe('stream-notify-user', [`${userId}/notification`, false]);
+      this.notificationSubscribed = true;
+    }
+    return true;
   }
 
+  /**
+   * 订阅 rooms-changed 作为 notification 漏消息探针。它不是最终消息流，
+   * 只用来发现 lastMessage 已变化但 notification 没到达的情况。
+   */
+  subscribeToRoomChanges(userId = this.loggedInUserId) {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      log('warn', 'realtime_subscribe_skipped', { reason: 'socket_not_open', stream: 'rooms-changed' });
+      return false;
+    }
+    if (!userId) {
+      log('warn', 'realtime_subscribe_skipped', { reason: 'missing_user_id', stream: 'rooms-changed' });
+      return false;
+    }
+    if (!this.roomsChangedSubscribed) {
+      this.subscribe('stream-notify-user', [`${userId}/rooms-changed`, false]);
+      this.roomsChangedSubscribed = true;
+    }
+    return true;
+  }
+
+  subscribeToNotificationProbe(userId = this.loggedInUserId) {
+    const notification = this.subscribeToNotifications(userId);
+    const roomsChanged = this.subscribeToRoomChanges(userId);
+    return notification && roomsChanged;
+  }
+
+  /**
+   * 订阅消息流。由上层在 bot 身份确认成功后显式调用（见 onConnected 的说明）。
+   *
+   * stream-room-messages 的 __my_messages__ 是可靠通道：Rocket.Chat 会把 bot 有权访问的
+   * 所有房间（私信 DM + 频道）的新消息推过来，只校验 canAccessRoom，不依赖 statusConnection
+   * 和用户通知偏好。
+   *
+   * 注意：该流会把 bot 自己发出的回复也推回来，因此【必须】先确认 bot 自身身份，
+   * 才能在收到消息时正确过滤掉自己的回复，否则会形成 bot ↔ bot 的私信死循环。
+   */
+  subscribeToMessages() {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      log('warn', 'realtime_subscribe_skipped', { reason: 'socket_not_open', stream: 'room-messages' });
+      return false;
+    }
+    if (!this.roomMessagesSubscribed) {
+      this.subscribe('stream-room-messages', ['__my_messages__', { useCollection: false, args: [] }]);
+      this.roomMessagesSubscribed = true;
+    }
+    return true;
+  }
   subscribe(name, params) {
     const id = crypto.randomUUID();
     this.subscriptions.add(id);
@@ -256,17 +326,41 @@ export class RocketRealtimeClient extends EventEmitter {
   }
 
   onChanged(payload) {
-    if (payload.collection !== 'stream-room-messages') return;
+    if (payload.collection === 'stream-room-messages') {
+      const args = payload.fields?.args;
+      if (!Array.isArray(args) || args.length === 0) return;
+
+      // stream-room-messages 的 changed 事件 payload 形如 { fields: { args: [message] } }。
+      const event = parseRoomMessage(args[0]);
+      if (event) {
+        event.source = 'room_messages';
+        this.emit('message', event);
+      }
+      return;
+    }
+
+    if (payload.collection !== 'stream-notify-user') return;
+    const eventName = payload.fields?.eventName || '';
     const args = payload.fields?.args;
     if (!Array.isArray(args) || args.length === 0) return;
 
-    // stream-room-messages 的 changed 事件 payload 形如 { fields: { args: [message] } }。
-    const event = parseRoomMessage(args[0]);
-    if (event) {
-      this.emit('message', event);
+    if (eventName.endsWith('/notification')) {
+      const event = parseNotification(args[0]);
+      if (event) {
+        event.source = 'notification';
+        this.emit('message', event);
+      }
+      return;
+    }
+
+    if (eventName.endsWith('/rooms-changed')) {
+      const event = parseRoomsChanged(args);
+      if (event) {
+        event.source = 'rooms_changed';
+        this.emit('roomChanged', event);
+      }
     }
   }
-
   startHeartbeat() {
     this.clearHeartbeat();
     this.heartbeatTimer = setInterval(() => {
@@ -330,6 +424,33 @@ export function parseNotification(notification) {
   };
 }
 
+/**
+ * 把 stream-notify-user rooms-changed payload 中的 lastMessage 规整成消息事件。
+ * rooms-changed 本身是房间状态变化，不是消息流；这里仅抽取 lastMessage 给
+ * 上层做 notification 漏消息检测。没有 lastMessage 或文本时返回 null。
+ */
+export function parseRoomsChanged(args) {
+  if (!Array.isArray(args) || args.length < 2) return null;
+  const [roomAction, room] = args;
+  if (!room || typeof room !== 'object') return null;
+
+  const lastMessage = room.lastMessage || room.lm || null;
+  if (!lastMessage || typeof lastMessage !== 'object') return null;
+
+  const roomId = lastMessage.rid || room._id || room.rid || '';
+  const roomType = room.t || '';
+  const message = {
+    ...lastMessage,
+    rid: roomId || lastMessage.rid
+  };
+  const event = parseRoomMessage(message);
+  if (!event) return null;
+
+  event.roomType = roomType;
+  event.isDirect = roomType ? roomType === 'd' : undefined;
+  event.roomAction = String(roomAction || '');
+  return event;
+}
 /**
  * 把 stream-room-messages 的 message payload 规整成统一的消息事件。
  * message 结构形如：

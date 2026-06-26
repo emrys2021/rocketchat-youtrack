@@ -21,6 +21,14 @@ export function createMessageDeduper({ ttlMs = 10 * 60 * 1000, maxEntries = 1000
       return { duplicate: false, remembered: true, key, expiresAt: nextExpiresAt, enabled };
     },
 
+    has(messageId, now = Date.now()) {
+      const key = String(messageId || '').trim();
+      if (!enabled || !key) return false;
+      pruneExpired(now);
+      const expiresAt = entries.get(key);
+      return Boolean(expiresAt && expiresAt > now);
+    },
+
     size(now = Date.now()) {
       pruneExpired(now);
       return entries.size;

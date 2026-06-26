@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseNotification, parseRoomMessage } from '../src/rocket-realtime.js';
+import { parseNotification, parseRoomMessage, parseRoomsChanged } from '../src/rocket-realtime.js';
 
 test('parses a direct message notification', () => {
   const event = parseNotification({
@@ -133,4 +133,28 @@ test('returns null when stream-room-messages room or text is missing', () => {
   assert.equal(parseRoomMessage(null), null);
   assert.equal(parseRoomMessage({ rid: 'roomDM', msg: '' }), null);
   assert.equal(parseRoomMessage({ msg: 'hi', u: { _id: 'u8' } }), null);
+});
+
+test('parses rooms-changed lastMessage as a fallback candidate', () => {
+  const event = parseRoomsChanged([
+    'updated',
+    {
+      _id: 'roomDM',
+      t: 'd',
+      lastMessage: {
+        _id: 'msg8',
+        rid: 'roomDM',
+        msg: '私聊 fallback 测试',
+        u: { _id: 'u8', username: 'alice' }
+      }
+    }
+  ]);
+
+  assert.ok(event);
+  assert.equal(event.roomId, 'roomDM');
+  assert.equal(event.messageId, 'msg8');
+  assert.equal(event.text, '私聊 fallback 测试');
+  assert.equal(event.roomType, 'd');
+  assert.equal(event.isDirect, true);
+  assert.equal(event.roomAction, 'updated');
 });

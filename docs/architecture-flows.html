@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTrack Rocket Agent — 架构流程图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d1018;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 40px 0 80px;
+    user-select: none;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+    padding: 0 32px;
+  }
+
+  .subtitle {
+    text-align: center;
+    font-size: 0.84rem;
+    color: #64748b;
+    margin-bottom: 36px;
+    padding: 0 32px;
+  }
+
+  /* ── legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    justify-content: center;
+    margin-bottom: 32px;
+    padding: 0 32px;
+  }
+
+  .legend-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .legend-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #475569;
+  }
+
+  .legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: #94a3b8;
+  }
+
+  .legend-line {
+    width: 32px;
+    height: 3px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .legend-dash {
+    width: 32px;
+    height: 0;
+    border-top: 3px dashed;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .legend-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── controls ── */
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    padding: 0 32px;
+  }
+
+  .ctrl-btn {
+    padding: 7px 22px;
+    border-radius: 7px;
+    border: 1.5px solid #2d3348;
+    background: #1a1d2a;
+    color: #94a3b8;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .ctrl-btn:hover { border-color: #475569; color: #e2e8f0; }
+  .ctrl-btn.active-a  { background: #172040; border-color: #3b82f6; color: #93c5fd; }
+  .ctrl-btn.active-b  { background: #12281a; border-color: #22c55e; color: #86efac; }
+  .ctrl-btn.active-c  { background: #26103a; border-color: #a855f7; color: #d8b4fe; }
+  .ctrl-btn.active-all{ background: #252010; border-color: #ca8a04; color: #fde047; }
+
+  /* ── diagram ── */
+  .diagram-wrap {
+    width: 100%;
+    margin: 0 0 48px;
+  }
+
+  svg#diagram {
+    width: 100%;
+    height: auto;
+    display: block;
+    overflow: visible;
+  }
+
+  /* ── step panel ── */
+  .step-panel {
+    width: 100%;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border-top: 1px solid #1e2536;
+  }
+
+  @media (max-width: 860px) {
+    .step-panel { grid-template-columns: 1fr; }
+    body { padding: 32px 0 64px; }
+  }
+
+  .step-col {
+    background: #161924;
+    border-right: 1px solid #1e2536;
+    overflow: hidden;
+    transition: opacity 0.2s;
+  }
+
+  .step-col:last-child { border-right: none; }
+
+  .step-col.dimmed { opacity: 0.2; pointer-events: none; }
+
+  .step-col-header {
+    padding: 16px 24px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    border-bottom: 1px solid #1e2536;
+    line-height: 1.4;
+  }
+
+  .header-a { color: #60a5fa; background: #172040; }
+  .header-b { color: #4ade80; background: #12281a; }
+  .header-c { color: #c084fc; background: #26103a; }
+
+  .step-list {
+    padding: 18px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .step-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .step-n {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: 0.68rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .n-a { background: #172040; color: #60a5fa; border: 1px solid #3b82f644; }
+  .n-b { background: #12281a; color: #4ade80; border: 1px solid #22c55e44; }
+  .n-c { background: #26103a; color: #c084fc; border: 1px solid #a855f744; }
+
+  .step-text {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    line-height: 1.6;
+  }
+
+  .step-text strong { color: #e2e8f0; }
+  .step-text code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    background: #0d1018;
+    color: #a5b4fc;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid #2d3348;
+  }
+
+  .step-note {
+    font-size: 0.72rem;
+    color: #475569;
+    margin-top: 3px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<h1>YouTrack Rocket Agent — 三条消息路线</h1>
+<p class="subtitle">所有角色在同一张图中，不同颜色连线代表不同路线；实线 = 请求，虚线 = 响应/返回；点击按钮高亮单条路线</p>
+
+<div class="legend">
+  <div class="legend-group">
+    <div class="legend-label">路线</div>
+    <div class="legend-items">
+      <div class="legend-item"><div class="legend-line" style="background:#3b82f6"></div>路线 A — Outgoing Webhook + YouTrack</div>
+      <div class="legend-item"><div class="legend-line" style="background:#22c55e"></div>路线 B — Bot-login Realtime + YouTrack</div>
+      <div class="legend-item"><div class="legend-line" style="background:#a855f7"></div>路线 C — Bot-login Realtime + 纯 LLM（待实现）</div>
+    </div>
+  </div>
+  <div class="legend-group">
+    <div class="legend-label">线型</div>
+    <div class="legend-items">
+      <div class="legend-item"><div class="legend-line" style="background:#94a3b8"></div>请求 / 发起方向</div>
+      <div class="legend-item"><div class="legend-dash" style="border-color:#94a3b8"></div>响应 / 返回数据</div>
+    </div>
+  </div>
+  <div class="legend-group">
+    <div class="legend-label">角色</div>
+    <div class="legend-items">
+      <div class="legend-item"><div class="legend-dot" style="background:#7dd3fc;border:1.5px solid #2563eb"></div>用户</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fb923c;border:1.5px solid #f97316"></div>Rocket.Chat 服务器</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e879f9;border:1.5px solid #c026d3"></div>Bot 后端 (Node.js)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#86efac;border:1.5px solid #16a34a"></div>LLM 推理服务</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fcd34d;border:1.5px solid #d97706"></div>YouTrack MCP</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fca5a5;border:1.5px solid #dc2626"></div>YouTrack REST API</div>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="ctrl-btn active-all" data-route="all" onclick="setRoute('all',this)">全部显示</button>
+  <button class="ctrl-btn" data-route="a" onclick="setRoute('a',this)">路线 A — Webhook</button>
+  <button class="ctrl-btn" data-route="b" onclick="setRoute('b',this)">路线 B — Bot-login + YouTrack</button>
+  <button class="ctrl-btn" data-route="c" onclick="setRoute('c',this)">路线 C — Bot-login + 纯 LLM</button>
+</div>
+
+<div class="diagram-wrap">
+<svg id="diagram" viewBox="0 0 1800 660" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="arr-a" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+    <path d="M0,0 L0,8 L10,4 z" fill="#3b82f6"/>
+  </marker>
+  <marker id="arr-b" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+    <path d="M0,0 L0,8 L10,4 z" fill="#22c55e"/>
+  </marker>
+  <marker id="arr-c" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+    <path d="M0,0 L0,8 L10,4 z" fill="#a855f7"/>
+  </marker>
+  <filter id="glow-a" x="-40%" y="-40%" width="180%" height="180%">
+    <feGaussianBlur stdDeviation="5" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="glow-b" x="-40%" y="-40%" width="180%" height="180%">
+    <feGaussianBlur stdDeviation="5" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="glow-c" x="-40%" y="-40%" width="180%" height="180%">
+    <feGaussianBlur stdDeviation="5" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+
+<!--
+  Layout (viewBox 1800×720)  — 大间距版本
+  Node centers:
+    User          :  160, 360
+    Rocket.Chat   :  520, 360
+    Bot Backend   :  920, 360
+    LLM           :  920, 120
+    YouTrack MCP  : 1380, 160
+    YouTrack REST : 1380, 560
+    Loop Guard    :  920, 590
+-->
+
+<!-- ═══════ NODES ═══════
+  4列等间距：节点宽190，间距307
+  User cx=155  RC cx=652  Bot cx=1149  MCP/YT cx=1646
+  LLM 与 Bot 同列（x相同），Guard 在 Bot 正下方
+-->
+
+<!-- User  cx=155 -->
+<g id="node-user">
+  <rect x="60" y="300" width="190" height="80" rx="10" fill="#141d2e" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="155" y="329" text-anchor="middle" fill="#7dd3fc" font-size="12" font-weight="700">用户</text>
+  <text x="155" y="347" text-anchor="middle" fill="#7dd3fc" font-size="10" opacity=".65">Rocket.Chat 客户端</text>
+  <text x="155" y="363" text-anchor="middle" fill="#7dd3fc" font-size="10" opacity=".65">Web / Desktop / Mobile</text>
+</g>
+
+<!-- Rocket.Chat  cx=652 -->
+<g id="node-rocket">
+  <rect x="557" y="290" width="190" height="90" rx="10" fill="#201608" stroke="#f97316" stroke-width="1.5"/>
+  <text x="652" y="318" text-anchor="middle" fill="#fb923c" font-size="12" font-weight="700">Rocket.Chat</text>
+  <text x="652" y="337" text-anchor="middle" fill="#fb923c" font-size="10" opacity=".65">消息服务器</text>
+  <text x="652" y="354" text-anchor="middle" fill="#fb923c" font-size="10" opacity=".65">WebSocket DDP :3000</text>
+  <text x="652" y="371" text-anchor="middle" fill="#fb923c" font-size="10" opacity=".65">Outgoing Webhook</text>
+</g>
+
+<!-- Bot Backend  cx=1149 -->
+<g id="node-bot">
+  <rect x="1054" y="285" width="190" height="100" rx="10" fill="#1e0f24" stroke="#c026d3" stroke-width="1.5"/>
+  <text x="1149" y="313" text-anchor="middle" fill="#e879f9" font-size="12" font-weight="700">Bot 后端 (Node.js)</text>
+  <text x="1149" y="332" text-anchor="middle" fill="#e879f9" font-size="10" opacity=".65">bot-runner.js  |  server.js</text>
+  <text x="1149" y="349" text-anchor="middle" fill="#e879f9" font-size="10" opacity=".65">loop-guard · message-filters</text>
+  <text x="1149" y="366" text-anchor="middle" fill="#e879f9" font-size="10" opacity=".65">rocket.js · agent.js</text>
+</g>
+
+<!-- LLM  cx=1149 -->
+<g id="node-llm">
+  <rect x="1054" y="50" width="190" height="90" rx="10" fill="#0e1f12" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="1149" y="78" text-anchor="middle" fill="#86efac" font-size="12" font-weight="700">LLM 推理服务</text>
+  <text x="1149" y="97" text-anchor="middle" fill="#86efac" font-size="10" opacity=".65">OpenAI-compatible API</text>
+  <text x="1149" y="114" text-anchor="middle" fill="#86efac" font-size="10" opacity=".65">POST /v1/chat/completions</text>
+  <text x="1149" y="130" text-anchor="middle" fill="#86efac" font-size="10" opacity=".65">qwen / gpt / 任意模型</text>
+</g>
+
+<!-- YouTrack MCP  cx=1646 -->
+<g id="node-mcp">
+  <rect x="1551" y="75" width="190" height="90" rx="10" fill="#1e1608" stroke="#d97706" stroke-width="1.5"/>
+  <text x="1646" y="103" text-anchor="middle" fill="#fcd34d" font-size="12" font-weight="700">YouTrack MCP</text>
+  <text x="1646" y="122" text-anchor="middle" fill="#fcd34d" font-size="10" opacity=".65">Streamable HTTP</text>
+  <text x="1646" y="139" text-anchor="middle" fill="#fcd34d" font-size="10" opacity=".65">search_issues</text>
+  <text x="1646" y="156" text-anchor="middle" fill="#fcd34d" font-size="10" opacity=".65">get_issue · get_issue_comments</text>
+</g>
+
+<!-- YouTrack REST  cx=1646 -->
+<g id="node-yt">
+  <rect x="1551" y="490" width="190" height="90" rx="10" fill="#1e0a0a" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="1646" y="518" text-anchor="middle" fill="#fca5a5" font-size="12" font-weight="700">YouTrack REST API</text>
+  <text x="1646" y="537" text-anchor="middle" fill="#fca5a5" font-size="10" opacity=".65">GET /api/issues/{id}</text>
+  <text x="1646" y="554" text-anchor="middle" fill="#fca5a5" font-size="10" opacity=".65">/timeTracking/workItems</text>
+  <text x="1646" y="571" text-anchor="middle" fill="#fca5a5" font-size="10" opacity=".65">Bearer token 鉴权</text>
+</g>
+
+<!-- Loop Guard  cx=1149 -->
+<g id="node-guard">
+  <rect x="1054" y="510" width="190" height="80" rx="10" fill="#0f1020" stroke="#475569" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="1149" y="538" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="700">Loop Guard</text>
+  <text x="1149" y="556" text-anchor="middle" fill="#94a3b8" font-size="10" opacity=".65">isAutoReply · isSystem 过滤</text>
+  <text x="1149" y="572" text-anchor="middle" fill="#94a3b8" font-size="10" opacity=".65">滑动窗口计数 (60s / 4次)</text>
+</g>
+
+<!-- ═══════════ ROUTE A (blue) ═══════════
+  User cx=155  RC cx=652  Bot cx=1149  LLM cx=1149  MCP cx=1646  YT cx=1646
+  节点右边缘 = cx+95，左边缘 = cx-95
+-->
+<g class="route route-a">
+
+  <!-- A1 User→RC 右边缘250→左边缘557 -->
+  <path d="M250,322 L557,322" stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="298" y="302" width="116" height="18" rx="4" fill="#0d1018"/>
+  <text x="356" y="315" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A① 触发词</text>
+  <rect x="298" y="320" width="116" height="15" rx="3" fill="#0d1018"/>
+  <text x="356" y="332" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">@youtrack-bot 关键词</text>
+
+  <!-- A2 RC→Bot  arc over top, 右边缘747→左边缘1054 -->
+  <path d="M747,300 C860,235 970,235 1054,285" stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="820" y="218" width="180" height="18" rx="4" fill="#0d1018"/>
+  <text x="910" y="231" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A② POST /webhooks/rocket</text>
+  <rect x="828" y="236" width="164" height="15" rx="3" fill="#0d1018"/>
+  <text x="910" y="248" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">ROCKET_WEBHOOK_TOKEN 校验</text>
+
+  <!-- A3 Bot→LLM  左边缘1096→同列上方 -->
+  <path d="M1096,285 L1096,140" stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="994" y="198" width="98" height="18" rx="4" fill="#0d1018"/>
+  <text x="1043" y="211" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A③ 消息+工具</text>
+  <rect x="994" y="216" width="98" height="15" rx="3" fill="#0d1018"/>
+  <text x="1043" y="228" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">messages + tools[]</text>
+
+  <!-- A4 LLM→MCP  右边缘1244→左边缘1551 -->
+  <path d="M1244,95 C1360,95 1430,110 1551,112" stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="1290" y="74" width="180" height="18" rx="4" fill="#0d1018"/>
+  <text x="1380" y="87" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A④ tool_call: search_issues</text>
+  <rect x="1300" y="92" width="160" height="15" rx="3" fill="#0d1018"/>
+  <text x="1380" y="104" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">query="{用户问题关键词}"</text>
+
+  <!-- A5 MCP→LLM  dashed, 左边缘1551→右边缘1244 -->
+  <path d="M1551,128 C1430,128 1360,113 1244,113" stroke="#3b82f6" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="1290" y="112" width="180" height="18" rx="4" fill="#0d1018"/>
+  <text x="1380" y="125" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A⑤ issue 列表 + 详情</text>
+  <rect x="1306" y="130" width="148" height="15" rx="3" fill="#0d1018"/>
+  <text x="1380" y="142" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">自动补 get_issue/comments</text>
+
+  <!-- A6 Bot→YT REST  右边缘1244→左边缘1551 -->
+  <path d="M1244,365 C1360,420 1430,475 1551,500" stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="1290" y="420" width="172" height="18" rx="4" fill="#0d1018"/>
+  <text x="1376" y="433" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A⑥ GET workItems</text>
+  <rect x="1300" y="438" width="152" height="15" rx="3" fill="#0d1018"/>
+  <text x="1376" y="450" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">top-3 候选 issue 工时记录</text>
+
+  <!-- A7 YT→Bot  dashed 左边缘1551→右边缘1244 -->
+  <path d="M1551,515 C1430,490 1360,445 1244,385" stroke="#3b82f6" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="1290" y="464" width="152" height="18" rx="4" fill="#0d1018"/>
+  <text x="1366" y="477" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A⑦ 工时记录</text>
+  <rect x="1302" y="482" width="128" height="15" rx="3" fill="#0d1018"/>
+  <text x="1366" y="494" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">附加为 tool result</text>
+
+  <!-- A8 LLM→Bot  dashed 右边缘1202→同列下方 -->
+  <path d="M1202,140 L1202,285" stroke="#3b82f6" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="1206" y="198" width="98" height="18" rx="4" fill="#0d1018"/>
+  <text x="1255" y="211" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A⑧ 最终回答</text>
+  <rect x="1206" y="216" width="98" height="15" rx="3" fill="#0d1018"/>
+  <text x="1255" y="228" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">简体中文长文本</text>
+
+  <!-- A9 Bot→RC  dashed 左边缘1054→右边缘747 -->
+  <path d="M1054,375 C970,435 860,440 747,395" stroke="#3b82f6" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="828" y="434" width="156" height="18" rx="4" fill="#0d1018"/>
+  <text x="906" y="447" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A⑨ chat.sendMessage</text>
+  <rect x="840" y="452" width="132" height="15" rx="3" fill="#0d1018"/>
+  <text x="906" y="464" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">REST · PAT 鉴权 · 分段</text>
+
+  <!-- A10 RC→User  dashed 左边缘557→右边缘250 -->
+  <path d="M557,360 L250,360" stroke="#3b82f6" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-a)"/>
+  <rect x="316" y="363" width="116" height="18" rx="4" fill="#0d1018"/>
+  <text x="374" y="376" text-anchor="middle" fill="#60a5fa" font-size="10" font-weight="600">A⑩ 消息回复</text>
+  <rect x="322" y="381" width="104" height="15" rx="3" fill="#0d1018"/>
+  <text x="374" y="393" text-anchor="middle" fill="#60a5fa" font-size="9" opacity=".8">线程 · 超长分段</text>
+
+</g>
+
+<!-- ═══════════ ROUTE B (green) ═══════════ -->
+<g class="route route-b">
+
+  <!-- B1 Bot→RC  DDP login, 左边缘1054→右边缘747 -->
+  <path d="M1054,305 C968,250 848,250 747,292" stroke="#22c55e" stroke-width="2.5" fill="none" marker-end="url(#arr-b)"/>
+  <rect x="822" y="252" width="164" height="18" rx="4" fill="#0d1018"/>
+  <text x="904" y="265" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">B① DDP WebSocket 登录</text>
+  <rect x="832" y="270" width="144" height="15" rx="3" fill="#0d1018"/>
+  <text x="904" y="282" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".8">username + sha256(password)</text>
+
+  <!-- B2 User→RC -->
+  <path d="M250,335 L557,335" stroke="#22c55e" stroke-width="2.5" fill="none" marker-end="url(#arr-b)"/>
+  <rect x="316" y="337" width="116" height="18" rx="4" fill="#0d1018"/>
+  <text x="374" y="350" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">B② 私信 / @提及</text>
+  <rect x="322" y="355" width="104" height="15" rx="3" fill="#0d1018"/>
+  <text x="374" y="367" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".8">DM 无需触发词</text>
+
+  <!-- B3 RC→Bot  WS push 右边缘747→左边缘1054 -->
+  <path d="M747,372 C848,418 968,420 1054,390" stroke="#22c55e" stroke-width="2.5" fill="none" marker-end="url(#arr-b)"/>
+  <rect x="822" y="414" width="164" height="18" rx="4" fill="#0d1018"/>
+  <text x="904" y="427" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">B③ WS 推送 notification</text>
+  <rect x="832" y="432" width="144" height="15" rx="3" fill="#0d1018"/>
+  <text x="904" y="444" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".8">stream-notify-user changed</text>
+
+  <!-- B4 Bot→Guard 下方 -->
+  <path d="M1160,385 L1160,510" stroke="#22c55e" stroke-width="2.5" fill="none" marker-end="url(#arr-b)"/>
+  <rect x="1166" y="434" width="122" height="18" rx="4" fill="#0d1018"/>
+  <text x="1227" y="447" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">B④ 消息过滤/去重</text>
+  <rect x="1174" y="452" width="106" height="15" rx="3" fill="#0d1018"/>
+  <text x="1227" y="464" text-anchor="middle" fill="#4ade80" font-size="9" opacity=".8">isAutoReply · isSystem</text>
+
+  <!-- B4r Guard→Bot  dashed -->
+  <path d="M1126,510 L1126,385" stroke="#22c55e" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-b)"/>
+  <rect x="1054" y="434" width="68" height="18" rx="4" fill="#0d1018"/>
+  <text x="1088" y="447" text-anchor="middle" fill="#4ade80" font-size="10" font-weight="600">通过</text>
+
+  <!-- B5 Bot→LLM -->
+  <path d="M1128,285 L1128,140" stroke="#22c55e" stroke-width="2.5" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B6 LLM→MCP -->
+  <path d="M1244,104 C1360,104 1430,118 1551,120" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B6r MCP→LLM  dashed -->
+  <path d="M1551,136 C1430,136 1360,122 1244,122" stroke="#22c55e" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B7 Bot→YT -->
+  <path d="M1244,375 C1360,428 1430,478 1551,508" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B7r YT→Bot  dashed -->
+  <path d="M1551,524 C1430,498 1360,448 1244,392" stroke="#22c55e" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B8 LLM→Bot  dashed -->
+  <path d="M1170,140 L1170,285" stroke="#22c55e" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B9 Bot→RC  dashed -->
+  <path d="M1054,385 C968,442 848,448 747,405" stroke="#22c55e" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-b)"/>
+
+  <!-- B10 RC→User  dashed -->
+  <path d="M557,348 L250,348" stroke="#22c55e" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-b)"/>
+
+</g>
+
+<!-- ═══════════ ROUTE C (purple) ═══════════ -->
+<g class="route route-c">
+
+  <!-- C1 Bot→RC  DDP login -->
+  <path d="M1054,318 C966,260 848,260 747,302" stroke="#a855f7" stroke-width="2.5" fill="none" marker-end="url(#arr-c)"/>
+
+  <!-- C2 User→RC -->
+  <path d="M250,346 L557,355" stroke="#a855f7" stroke-width="2.5" fill="none" marker-end="url(#arr-c)"/>
+  <rect x="316" y="394" width="116" height="18" rx="4" fill="#0d1018"/>
+  <text x="374" y="407" text-anchor="middle" fill="#c084fc" font-size="10" font-weight="600">C② 私信 / @提及</text>
+  <rect x="316" y="412" width="116" height="15" rx="3" fill="#0d1018"/>
+  <text x="374" y="424" text-anchor="middle" fill="#c084fc" font-size="9" opacity=".8">任意问题，不限 YouTrack</text>
+
+  <!-- C3 RC→Bot -->
+  <path d="M747,382 C848,428 968,430 1054,400" stroke="#a855f7" stroke-width="2.5" fill="none" marker-end="url(#arr-c)"/>
+
+  <!-- C4 Bot→Guard -->
+  <path d="M1188,385 L1188,510" stroke="#a855f7" stroke-width="2.5" fill="none" marker-end="url(#arr-c)"/>
+
+  <!-- C4r Guard→Bot  dashed -->
+  <path d="M1152,510 L1152,385" stroke="#a855f7" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-c)"/>
+
+  <!-- C5 Bot→LLM  no tools, bold -->
+  <path d="M1216,285 L1216,140" stroke="#a855f7" stroke-width="3" fill="none" marker-end="url(#arr-c)"/>
+  <rect x="1222" y="196" width="126" height="18" rx="4" fill="#0d1018"/>
+  <text x="1285" y="209" text-anchor="middle" fill="#c084fc" font-size="10" font-weight="700">C③ 直接 chat</text>
+  <rect x="1222" y="214" width="126" height="15" rx="3" fill="#0d1018"/>
+  <text x="1285" y="226" text-anchor="middle" fill="#c084fc" font-size="9" opacity=".8">不传 tools，单轮请求</text>
+
+  <!-- C6 LLM→Bot  dashed -->
+  <path d="M1244,140 L1244,285" stroke="#a855f7" stroke-width="2.5" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-c)"/>
+  <rect x="1248" y="196" width="114" height="18" rx="4" fill="#0d1018"/>
+  <text x="1305" y="209" text-anchor="middle" fill="#c084fc" font-size="10" font-weight="600">C④ 直接回答</text>
+  <rect x="1248" y="214" width="114" height="15" rx="3" fill="#0d1018"/>
+  <text x="1305" y="226" text-anchor="middle" fill="#c084fc" font-size="9" opacity=".8">无工具调用延迟</text>
+
+  <!-- C7 Bot→RC  dashed -->
+  <path d="M1054,394 C966,450 848,456 747,415" stroke="#a855f7" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-c)"/>
+
+  <!-- C8 RC→User  dashed -->
+  <path d="M557,368 L250,358" stroke="#a855f7" stroke-width="2" stroke-dasharray="7,5" fill="none" marker-end="url(#arr-c)"/>
+
+</g>
+
+</svg>
+</div>
+
+<!-- ── step panels ── -->
+<div class="step-panel" id="step-panel">
+
+  <div class="step-col" id="col-a">
+    <div class="step-col-header header-a">路线 A — Outgoing Webhook + YouTrack MCP</div>
+    <div class="step-list">
+      <div class="step-item">
+        <div class="step-n n-a">1</div>
+        <div class="step-text">
+          <strong>用户</strong>在 Rocket.Chat 频道发消息，消息中包含触发词 <code>@youtrack-bot</code>（触发词在 Outgoing Webhook 配置中定义）
+          <div class="step-note">Rocket.Chat 仅在消息包含配置的触发词时才转发；不支持私信（DM）</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">2</div>
+        <div class="step-text">
+          <strong>Rocket.Chat</strong> 向后端 <code>POST /webhooks/rocket</code>，请求体包含消息内容、房间、发送者，以及 <code>token</code> 字段用于身份校验
+          <div class="step-note">HTTP POST，后端通过 <code>ROCKET_WEBHOOK_TOKEN</code> 比对验证来源合法性</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">3</div>
+        <div class="step-text">
+          <strong>Bot 后端</strong>（<code>server.js</code>）校验 token；过滤 bot 自身消息、系统消息、auto-reply；loop guard 滑动窗口计数，防止 60 秒内同一房间超过 4 次响应
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">4</div>
+        <div class="step-text">
+          <strong>Bot → LLM</strong>：将用户消息 + MCP 工具列表（<code>search_issues</code> 等）发给 LLM，LLM 决定调用哪些工具及参数
+          <div class="step-note">最多 <code>MCP_MAX_TOOL_ROUNDS</code> 轮工具调用（默认 10 轮）</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">5</div>
+        <div class="step-text">
+          <strong>Bot → YouTrack MCP</strong>：调 <code>search_issues</code>；后端自动对 top-N 候选 issue 补充调 <code>get_issue</code>、<code>get_issue_comments</code>，结果追加给 LLM
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">6</div>
+        <div class="step-text">
+          <strong>Bot → YouTrack REST</strong>：对每个候选 issue 调 <code>GET /api/issues/{id}/timeTracking/workItems</code>，获取工时记录作为额外证据
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">7</div>
+        <div class="step-text">
+          <strong>LLM</strong> 综合所有工具结果，按系统提示用简体中文输出最终回答，分段列出描述、评论、工时证据
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-a">8</div>
+        <div class="step-text">
+          <strong>Bot → Rocket.Chat</strong>：调 <code>chat.sendMessage</code> REST API，以 bot 账号回复到原房间/线程；超长消息自动分段（默认 3500 字/段）
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step-col" id="col-b">
+    <div class="step-col-header header-b">路线 B — Bot-login Realtime + YouTrack MCP</div>
+    <div class="step-list">
+      <div class="step-item">
+        <div class="step-n n-b">1</div>
+        <div class="step-text">
+          <strong>Bot 后端</strong>（<code>bot-runner.js</code>）启动时主动建立 WebSocket 连接，完成 DDP 握手，用 <code>ROCKET_BOT_USERNAME</code> + <code>sha256(ROCKET_BOT_PASSWORD)</code> 登录
+          <div class="step-note">DDP 支持 username/password 或 login({ resume })；resume token 可以是 PAT；断线后指数退避重连（最长 60s）</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-b">2</div>
+        <div class="step-text">
+          登录成功并通过 /api/v1/me 身份确认后，默认订阅 notification + rooms-changed；notification 漏消息时切到 <code>stream-room-messages/__my_messages__</code>
+          <div class="step-note">私信无需触发词；频道消息需包含 <code>@youtrack-bot</code></div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-b">3</div>
+        <div class="step-text">
+          <strong>用户</strong>发私信或频道 <code>@youtrack-bot</code>，<strong>Rocket.Chat</strong> 通过 WebSocket 推送 <code>stream-notify-user changed</code> 事件
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-b">4</div>
+        <div class="step-text">
+          <strong>Bot 后端</strong> 解析 notification 或 fallback 消息，过滤：bot 自身消息（DDP userId + REST userId 双重比对）、系统消息（<code>isSystem</code>）、auto-reply（<code>isAutoReplyText</code> 正则匹配）；message dedupe 去重；loop guard 计数
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-b">5</div>
+        <div class="step-text">
+          先向原房间/线程发进度消息「收到，正在处理，请稍候…」，随后异步调 <code>agent.answer()</code>
+          <div class="step-note">可用 <code>ROCKET_POST_PROGRESS=false</code> 关闭进度消息</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-b">6</div>
+        <div class="step-text">
+          <strong>Bot → LLM + MCP + YouTrack REST</strong>：与路线 A 步骤 4–6 完全相同，走同一套 <code>agent.answer()</code> 逻辑
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-b">7</div>
+        <div class="step-text">
+          <strong>Bot → Rocket.Chat</strong>：用 PAT（<code>ROCKET_REST_PAT</code>）调 <code>chat.sendMessage</code> REST API 回复；PAT 不过期，比登录 token 更稳定
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step-col" id="col-c">
+    <div class="step-col-header header-c">路线 C — Bot-login Realtime + 纯 LLM（待实现）</div>
+    <div class="step-list">
+      <div class="step-item">
+        <div class="step-n n-c">1</div>
+        <div class="step-text">
+          Bot 后端 WebSocket 登录 + 订阅与路线 B 完全相同；无需额外配置 MCP 或 YouTrack
+          <div class="step-note">只需配置 <code>LLM_API_URL</code>、<code>ROCKET_BOT_USERNAME</code>、<code>ROCKET_BOT_PASSWORD</code></div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-c">2</div>
+        <div class="step-text">
+          <strong>用户</strong>发私信或频道 <code>@youtrack-bot</code>，可以问<strong>任意问题</strong>，不限于 YouTrack issue 查询
+          <div class="step-note">可选路由规则：消息含 <code>/yt</code> 前缀走路线 B，否则走路线 C</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-c">3</div>
+        <div class="step-text">
+          <strong>Rocket.Chat</strong> WS 推送 → Bot 后端同样做 auto-reply 过滤、去重、loop guard，流程与路线 B 步骤 3–4 相同
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-c">4</div>
+        <div class="step-text">
+          <strong>Bot → LLM</strong>：<strong>不传 tools 列表</strong>，直接调 <code>POST /v1/chat/completions</code>，系统提示改为通用助手角色，单轮请求即可得到回答
+          <div class="step-note">需新增 <code>agent.chat(question)</code> 方法，约 20 行代码</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-c">5</div>
+        <div class="step-text">
+          <strong>LLM</strong> 直接输出回答，无工具调用轮次，延迟比路线 A/B 低（省去 MCP 多轮 RTT）
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-c">6</div>
+        <div class="step-text">
+          <strong>Bot → Rocket.Chat</strong>：<code>chat.sendMessage</code> REST 回复，与路线 B 步骤 7 相同
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-n n-c">★</div>
+        <div class="step-text">
+          <strong>可选共存路由</strong>：<code>@youtrack-bot /yt 问题</code> 走路线 B（YouTrack 检索）；<code>@youtrack-bot 问题</code> 或私信走路线 C（通用聊天）
+          <div class="step-note">路由逻辑在 <code>bot-runner.js</code> 的 <code>handleIncoming()</code> 中按前缀分支即可</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const ROUTES = ['a','b','c'];
+  let current = 'all';
+
+  function setRoute(route, btn) {
+    current = route;
+
+    document.querySelectorAll('.ctrl-btn').forEach(b => { b.className = 'ctrl-btn'; });
+    btn.classList.add(route === 'all' ? 'active-all' : 'active-' + route);
+
+    ROUTES.forEach(r => {
+      const g = document.querySelector('.route-' + r);
+      if (!g) return;
+      if (route === 'all' || route === r) {
+        g.style.opacity = '1';
+        g.style.filter = (route === r) ? 'url(#glow-' + r + ')' : 'none';
+        g.style.transition = 'opacity 0.2s';
+      } else {
+        g.style.opacity = '0.06';
+        g.style.filter = 'none';
+        g.style.transition = 'opacity 0.2s';
+      }
+    });
+
+    ROUTES.forEach(r => {
+      const col = document.getElementById('col-' + r);
+      if (!col) return;
+      if (route === 'all' || route === r) col.classList.remove('dimmed');
+      else col.classList.add('dimmed');
+    });
+  }
+
+  setRoute('all', document.querySelector('[data-route="all"]'));
+</script>
+
+</body>
+</html>

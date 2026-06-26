@@ -112,7 +112,9 @@ export const config = {
     loopWindowMs: getInteger('ROCKET_LOOP_WINDOW_MS', 60000),
     loopMaxEvents: getInteger('ROCKET_LOOP_MAX_EVENTS', 4),
     messageDedupeTtlMs: getInteger('ROCKET_MESSAGE_DEDUPE_TTL_MS', 10 * 60 * 1000),
-    messageDedupeMaxEntries: getInteger('ROCKET_MESSAGE_DEDUPE_MAX_ENTRIES', 1000)
+    messageDedupeMaxEntries: getInteger('ROCKET_MESSAGE_DEDUPE_MAX_ENTRIES', 1000),
+    messageStreamMode: getString('ROCKET_MESSAGE_STREAM_MODE', 'auto').toLowerCase(),
+    notificationFallbackMs: getInteger('ROCKET_NOTIFICATION_FALLBACK_MS', 2000)
   }
 };
 
@@ -133,6 +135,9 @@ export function validateConfig(mode = 'webhook') {
 
   if (mode === 'bot') {
     if (!config.rocket.url) missing.push('ROCKET_URL');
+    if (!['auto', 'notification', 'my_messages'].includes(config.rocket.messageStreamMode)) {
+      missing.push('ROCKET_MESSAGE_STREAM_MODE must be auto, notification, or my_messages');
+    }
     const hasPassword = Boolean(config.rocket.botUsername && config.rocket.botPassword);
     const hasResumeToken = Boolean(config.rocket.ddpResumeToken);
     // 纯 PAT 模式：PAT 可直接用于 DDP login({ resume })，因此 restUserId + restPat
