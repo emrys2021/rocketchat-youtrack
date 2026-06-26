@@ -157,7 +157,7 @@ async function handleRocketWebhook(req, res) {
       count: loopState.count,
       windowMs: loopState.windowMs,
       maxEvents: loopState.maxEvents,
-      recommendation: 'Check Rocket.Chat outgoing webhook trigger scope, user auto-reply settings, and ROCKET_BOT_USERNAME/ROCKET_USER_ID.'
+      recommendation: 'Check Rocket.Chat outgoing webhook trigger scope, user auto-reply settings, and ROCKET_BOT_USERNAME/ROCKET_REST_USER_ID.'
     });
     return sendJson(res, 200, { ok: true, ignored: true, reason: 'loop_guard' });
   }
@@ -253,13 +253,13 @@ async function validateRocketBotIdentity() {
       usernameMismatch,
       userIdMismatch,
       recommendation: usernameMismatch || userIdMismatch
-        ? 'Update ROCKET_BOT_USERNAME and ROCKET_USER_ID to match the Rocket.Chat token user.'
+        ? 'Update ROCKET_BOT_USERNAME and ROCKET_REST_USER_ID to match the Rocket.Chat REST token user.'
         : undefined
     });
   } catch (error) {
     log('warn', 'rocket_bot_identity_check_failed', {
       ...errorToMeta(error),
-      recommendation: 'Check ROCKET_URL, ROCKET_USER_ID, and ROCKET_AUTH_TOKEN. Self-message filtering will fall back to configured values.'
+      recommendation: 'Check ROCKET_URL, ROCKET_REST_USER_ID, and ROCKET_REST_PAT or ROCKET_REST_LOGIN_AUTH_TOKEN. Self-message filtering will fall back to configured values.'
     });
   }
 }
@@ -282,6 +282,7 @@ server.listen(config.port, () => {
     rocketLoopWindowMs: config.rocket.loopWindowMs,
     rocketLoopMaxEvents: config.rocket.loopMaxEvents,
     rocketIgnoreAutoReplies: config.rocket.ignoreAutoReplies,
+    rocketRestTokenSource: config.rocket.restTokenSource || '',
     rocketMessageDedupeTtlMs: config.rocket.messageDedupeTtlMs,
     rocketMessageDedupeMaxEntries: config.rocket.messageDedupeMaxEntries
   });

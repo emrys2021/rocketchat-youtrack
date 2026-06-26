@@ -47,6 +47,11 @@ function inferYouTrackBaseUrl(mcpUrl) {
   }
 }
 
+const rocketRestUserId = getString('ROCKET_REST_USER_ID');
+const rocketRestPat = getString('ROCKET_REST_PAT');
+const rocketRestLoginAuthToken = getString('ROCKET_REST_LOGIN_AUTH_TOKEN');
+const rocketRestToken = rocketRestPat || rocketRestLoginAuthToken;
+const rocketRestTokenSource = rocketRestPat ? 'pat' : rocketRestLoginAuthToken ? 'login_auth_token' : '';
 export const config = {
   port: getInteger('PORT', 8080),
   nodeEnv: getString('NODE_ENV', 'development'),
@@ -87,8 +92,12 @@ export const config = {
   rocket: {
     webhookToken: getString('ROCKET_WEBHOOK_TOKEN'),
     url: getString('ROCKET_URL'),
-    userId: getString('ROCKET_USER_ID'),
-    authToken: getString('ROCKET_AUTH_TOKEN'),
+    userId: rocketRestUserId,
+    authToken: rocketRestToken,
+    restUserId: rocketRestUserId,
+    restPat: rocketRestPat,
+    restLoginAuthToken: rocketRestLoginAuthToken,
+    restTokenSource: rocketRestTokenSource,
     botUsername: getString('ROCKET_BOT_USERNAME', 'youtrack-bot'),
     replyInThread: getBoolean('ROCKET_REPLY_IN_THREAD', true),
     postProgress: getBoolean('ROCKET_POST_PROGRESS', true),
