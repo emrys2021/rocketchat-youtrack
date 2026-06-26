@@ -124,7 +124,7 @@ export function validateConfig(mode = 'webhook') {
     if (!config.rocket.url) missing.push('ROCKET_URL');
     const hasPassword = Boolean(config.rocket.botUsername && config.rocket.botPassword);
     if (!hasPassword) {
-      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD');
+      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (required for bot-login Realtime/DDP login; ROCKET_AUTH_TOKEN/PAT is for REST replies)');
     }
   } else {
     if (!config.rocket.webhookToken) missing.push('ROCKET_WEBHOOK_TOKEN');

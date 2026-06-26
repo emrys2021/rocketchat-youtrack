@@ -113,7 +113,7 @@ For **bot-login realtime mode** no webhook is needed. Instead:
 
 - create the same bot user, for example `youtrack-bot`
 - set `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` for the WebSocket (DDP) login. A Personal Access Token does **not** work for DDP login (it returns `User not found [401]`); it is only used for REST replies.
-- create a Personal Access Token for that bot and set `ROCKET_USER_ID` + `ROCKET_AUTH_TOKEN` so the bot can post replies via REST
+- recommended: create a Personal Access Token for that bot and set `ROCKET_USER_ID` + `ROCKET_AUTH_TOKEN` so REST replies use a stable bot token; otherwise the service falls back to the DDP login token after startup
 - set `ROCKET_URL` to the Rocket.Chat base URL (the WebSocket URL is derived as `<url>/websocket`)
 - invite the bot to any channel where it should answer; users mention it with `@youtrack-bot`, or message it directly
 
