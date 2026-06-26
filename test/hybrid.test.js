@@ -23,32 +23,30 @@ test('formats work item evidence for LLM context', () => {
   assert.match(text, /Troubleshooting/);
   assert.match(text, /Reset browser protocol handler/);
 });
-test('builds initial search reminder for issues and Knowledge Base articles', () => {
+test('builds generic retrieval reminder without naming exact tools', () => {
   const reminder = buildInitialSearchReminder([
     { function: { name: 'search_issues' } },
     { function: { name: 'search_articles' } }
   ]);
 
-  assert.match(reminder, /search_issues/);
-  assert.match(reminder, /search_articles/);
-  assert.match(reminder, /Knowledge Base/);
+  assert.match(reminder, /YouTrack 只读工具/);
+  assert.match(reminder, /根据用户问题选择合适/);
+  assert.doesNotMatch(reminder, /search_issues/);
+  assert.doesNotMatch(reminder, /search_articles/);
 });
 
-test('builds reminder only for missing search tools', () => {
+test('builds retrieval reminder only once and stops after any retrieval tool call', () => {
+  const tools = [
+    { function: { name: 'search_issues' } },
+    { function: { name: 'search_articles' } }
+  ];
   const reminded = new Set();
-  const first = buildInitialSearchReminder([
-    { function: { name: 'search_issues' } },
-    { function: { name: 'search_articles' } }
-  ], new Set(['search_issues']), reminded);
 
-  assert.doesNotMatch(first, /search_issues/);
-  assert.match(first, /search_articles/);
-  assert.equal(buildInitialSearchReminder([
-    { function: { name: 'search_issues' } },
-    { function: { name: 'search_articles' } }
-  ], new Set(['search_issues']), reminded), '');
+  assert.match(buildInitialSearchReminder(tools, new Set(), reminded), /YouTrack 只读工具/);
+  assert.equal(buildInitialSearchReminder(tools, new Set(), reminded), '');
+  assert.equal(buildInitialSearchReminder(tools, new Set(['search_issues']), new Set()), '');
 });
 
-test('does not build initial search reminder without search tools', () => {
-  assert.equal(buildInitialSearchReminder([{ function: { name: 'get_issue' } }]), '');
+test('does not build initial retrieval reminder without read-only retrieval tools', () => {
+  assert.equal(buildInitialSearchReminder([{ function: { name: 'find_projects' } }]), '');
 });

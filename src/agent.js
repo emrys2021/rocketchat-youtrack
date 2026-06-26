@@ -9,7 +9,8 @@ const SYSTEM_PROMPT = [
   'The user may paste an error, stack trace, alert, or symptom and ask whether similar issues exist.',
   'Use only the provided read-only YouTrack MCP tools to search issues, descriptions, comments, issue details, and Knowledge Base articles.',
   'Do not create, update, delete, transition, assign, log work, comment on issues, create articles, or update articles.',
-  'For similar issue or solution questions, call search_issues when available and also call search_articles when available. Then inspect the most relevant issues with get_issue and get_issue_comments, and inspect the most relevant Knowledge Base articles with get_article when those tools are available.',
+  'For issue summary or issue-detail questions, focus on issue details, comments, and work items; do not search Knowledge Base unless the user asks for a solution, troubleshooting guidance, operation guide, or Knowledge Base information.',
+  'For similar issue questions, search related issues first. For solution, troubleshooting, workaround, operation guide, or Knowledge Base questions, also inspect relevant Knowledge Base articles when the tool is available.',
   'The backend may append read-only YouTrack REST work item evidence to search_issues or get_issue results. Treat that as source evidence.',
   'When answering, write in Simplified Chinese.',
   'Explain from the user business scenario: what they are seeing, which issues look related, why, and what to check next.',
@@ -53,7 +54,7 @@ export class YouTrackAgent {
       }
     ];
     const calledToolNames = new Set();
-    const remindedSearchToolNames = new Set();
+    const remindedRetrievalPrompts = new Set();
 
     for (let round = 0; round < this.config.mcp.maxToolRounds; round += 1) {
       const assistantMessage = await this.llm.chat(messages, tools);
@@ -61,7 +62,7 @@ export class YouTrackAgent {
 
       const toolCalls = normalizeToolCalls(assistantMessage);
       if (toolCalls.length === 0) {
-        const searchReminder = buildInitialSearchReminder(tools, calledToolNames, remindedSearchToolNames);
+        const searchReminder = buildInitialSearchReminder(tools, calledToolNames, remindedRetrievalPrompts);
         if (searchReminder) {
           messages.push({
             role: 'user',
@@ -243,18 +244,21 @@ function hasTool(tools, name) {
   return tools.some((tool) => tool.function?.name === name);
 }
 
-export function buildInitialSearchReminder(tools, calledToolNames = new Set(), remindedSearchToolNames = new Set()) {
-  const searches = [];
-  for (const [toolName, description] of [
-    ['search_issues', 'search_issues 搜索相似 issue'],
-    ['search_articles', 'search_articles 检索 Knowledge Base article']
-  ]) {
-    if (!hasTool(tools, toolName) || calledToolNames.has(toolName) || remindedSearchToolNames.has(toolName)) continue;
-    searches.push(description);
-    remindedSearchToolNames.add(toolName);
-  }
-  if (searches.length === 0) return '';
-  return '你还没有完成 YouTrack 检索。请先调用可用的只读检索工具：' + searches.join('；') + '。然后基于工具结果回答；如果历史工单和 Knowledge Base 证据结论不同，请分开说明。';
+export function buildInitialSearchReminder(tools, calledToolNames = new Set(), remindedRetrievalPrompts = new Set()) {
+  const retrievalToolNames = [
+    'search_issues',
+    'get_issue',
+    'get_issue_comments',
+    'search_articles',
+    'get_article'
+  ];
+  const hasRetrievalTool = retrievalToolNames.some((toolName) => hasTool(tools, toolName));
+  const alreadyRetrieved = retrievalToolNames.some((toolName) => calledToolNames.has(toolName));
+
+  if (!hasRetrievalTool || alreadyRetrieved || remindedRetrievalPrompts.has('__retrieval_reminder__')) return '';
+  remindedRetrievalPrompts.add('__retrieval_reminder__');
+
+  return '你还没有调用任何 YouTrack 只读工具。请先根据用户问题选择合适的可用工具检索事实，再基于工具结果回答。只是总结指定 issue 时，围绕 issue 详情、评论和处理记录；需要解决方案、排障、操作指引或知识库资料时，再检索 Knowledge Base。';
 }
 
 function extractIssueIdFromArgs(args) {
@@ -284,4 +288,3 @@ export function extractIssueIds(text) {
 
   return [...ids];
 }
-
