@@ -1,6 +1,6 @@
 # YouTrack Rocket Agent
 
-This service receives Rocket.Chat messages, asks an OpenAI-compatible LLM to search YouTrack through MCP, enriches candidate issues with read-only YouTrack REST work items, and posts the final answer back to Rocket.Chat as a bot.
+This service receives Rocket.Chat messages, asks an OpenAI-compatible LLM to search YouTrack issues and Knowledge Base articles through MCP, enriches candidate issues with read-only YouTrack REST work items, and posts the final answer back to Rocket.Chat as a bot.
 
 ## Two Modes
 
@@ -20,8 +20,8 @@ Both modes share dependency wiring through `src/runtime.js` and reply through th
 3. The service verifies `ROCKET_WEBHOOK_TOKEN`.
 4. The service lists YouTrack MCP tools through `tools/list`.
 5. The service exposes only the read-only tools in `MCP_ALLOWED_TOOLS`.
-6. The LLM calls `search_issues`, then the backend auto-enriches top candidate issues with `get_issue`, `get_issue_comments`, and read-only REST work items.
-7. The LLM writes a final answer in Simplified Chinese, separating evidence from description, comments, and work items.
+6. The LLM calls `search_issues` and `search_articles` when those tools are available. The backend auto-enriches top candidate issues with `get_issue`, `get_issue_comments`, and read-only REST work items; the LLM can inspect matching Knowledge Base articles with `get_article`.
+7. The LLM writes a final answer in Simplified Chinese, separating evidence from issue descriptions, comments, work items, and Knowledge Base articles.
 8. The service posts the answer to Rocket.Chat with `chat.sendMessage`.
 
 ## Flow (bot-login realtime mode)
@@ -43,12 +43,12 @@ LLM_API_KEY=<key>
 LLM_MODEL=qwen3.6-35b-a3b-01
 ```
 
-Use a strict read-only MCP allowlist:
+Use a strict read-only MCP allowlist for issues and Knowledge Base articles:
 
 ```text
 MCP_URL=http://youtrack.example.com/mcp
 MCP_API_KEY=<youtrack permanent token>
-MCP_ALLOWED_TOOLS=search_issues,get_issue,get_issue_comments
+MCP_ALLOWED_TOOLS=search_issues,get_issue,get_issue_comments,search_articles,get_article
 ```
 
 Configure YouTrack REST for work items:
@@ -143,7 +143,7 @@ When YouTrack or Rocket.Chat is on another server, use real IP addresses or DNS 
 
 ## Operational Notes
 
-- Do not expose write tools such as `log_work`, `create_issue`, `update_issue`, `add_issue_comment`, or `link_issues`.
+- Do not expose write tools such as `log_work`, `create_issue`, `update_issue`, `add_issue_comment`, `link_issues`, `create_article`, or `update_article`.
 - Use a low-privilege YouTrack token that can only read the projects you want exposed.
 - `ADMIN_TOKEN` protects local test endpoints and is not a YouTrack token.
 - If `/debug/work-items` returns 403, the token lacks permission to read time tracking work items.

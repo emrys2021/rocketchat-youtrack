@@ -7,15 +7,15 @@ import { formatWorkItems } from './youtrack-rest.js';
 const SYSTEM_PROMPT = [
   'You are a YouTrack issue search assistant for operations and engineering users.',
   'The user may paste an error, stack trace, alert, or symptom and ask whether similar issues exist.',
-  'Use only the provided read-only YouTrack MCP tools to search issues, descriptions, comments, and issue details.',
-  'Do not create, update, delete, transition, assign, log work, or comment on issues.',
-  'For similar issue questions, call search_issues first. Then inspect the most relevant issues with get_issue and get_issue_comments when those tools are available.',
+  'Use only the provided read-only YouTrack MCP tools to search issues, descriptions, comments, issue details, and Knowledge Base articles.',
+  'Do not create, update, delete, transition, assign, log work, comment on issues, create articles, or update articles.',
+  'For similar issue or solution questions, call search_issues when available and also call search_articles when available. Then inspect the most relevant issues with get_issue and get_issue_comments, and inspect the most relevant Knowledge Base articles with get_article when those tools are available.',
   'The backend may append read-only YouTrack REST work item evidence to search_issues or get_issue results. Treat that as source evidence.',
   'When answering, write in Simplified Chinese.',
   'Explain from the user business scenario: what they are seeing, which issues look related, why, and what to check next.',
-  'For solutions, explicitly separate evidence found in description, comments, and work items. If work items or comments do not contain a solution, say that clearly.',
+  'For solutions, explicitly separate evidence found in issue descriptions, comments, work items, and Knowledge Base articles. If a source does not contain a solution, say that clearly.',
   'Rocket.Chat formatting rules: use short headings and bullet lists; do not use Markdown tables. For issue lists, prefer list items like - [ISSUE-ID](url) | title | status | owner. If aligned columns are truly necessary, use a fenced text code block instead of a Markdown table.',
-  'Prefer concise answers. Include issue id, title, status, project, and URL when available.',
+  'Prefer concise answers. Include issue id, article id, title, status, project, and URL when available.',
   'If results are weak, say so and provide better search keywords.'
 ].join('\n');
 
@@ -52,6 +52,8 @@ export class YouTrackAgent {
         content: buildUserPrompt(question, context)
       }
     ];
+    const calledToolNames = new Set();
+    const remindedSearchToolNames = new Set();
 
     for (let round = 0; round < this.config.mcp.maxToolRounds; round += 1) {
       const assistantMessage = await this.llm.chat(messages, tools);
@@ -59,10 +61,11 @@ export class YouTrackAgent {
 
       const toolCalls = normalizeToolCalls(assistantMessage);
       if (toolCalls.length === 0) {
-        if (round === 0 && hasTool(tools, 'search_issues')) {
+        const searchReminder = buildInitialSearchReminder(tools, calledToolNames, remindedSearchToolNames);
+        if (searchReminder) {
           messages.push({
             role: 'user',
-            content: '你还没有检索 YouTrack。请先调用 search_issues 搜索相似 issue，然后基于工具结果回答。'
+            content: searchReminder
           });
           continue;
         }
@@ -82,6 +85,8 @@ export class YouTrackAgent {
           });
           continue;
         }
+
+        calledToolNames.add(mcpName);
 
         log('info', 'tool_call', {
           tool: mcpName,
@@ -112,7 +117,7 @@ export class YouTrackAgent {
 
     messages.push({
       role: 'user',
-      content: 'Tool call limit reached. Summarize the available issue details, comments, and work item evidence. Answer the original question in Simplified Chinese.'
+      content: 'Tool call limit reached. Summarize the available issue details, comments, work item evidence, and Knowledge Base article evidence. Answer the original question in Simplified Chinese.'
     });
 
     const finalMessage = await this.llm.chat(messages);
@@ -236,6 +241,20 @@ function normalizeToolCalls(message) {
 
 function hasTool(tools, name) {
   return tools.some((tool) => tool.function?.name === name);
+}
+
+export function buildInitialSearchReminder(tools, calledToolNames = new Set(), remindedSearchToolNames = new Set()) {
+  const searches = [];
+  for (const [toolName, description] of [
+    ['search_issues', 'search_issues 搜索相似 issue'],
+    ['search_articles', 'search_articles 检索 Knowledge Base article']
+  ]) {
+    if (!hasTool(tools, toolName) || calledToolNames.has(toolName) || remindedSearchToolNames.has(toolName)) continue;
+    searches.push(description);
+    remindedSearchToolNames.add(toolName);
+  }
+  if (searches.length === 0) return '';
+  return '你还没有完成 YouTrack 检索。请先调用可用的只读检索工具：' + searches.join('；') + '。然后基于工具结果回答；如果历史工单和 Knowledge Base 证据结论不同，请分开说明。';
 }
 
 function extractIssueIdFromArgs(args) {
