@@ -10,7 +10,7 @@ import { isAutoReplyText, isSystemMessageType } from './message-filters.js';
  * 负责：
  *   1. 连接 ws(s)://<host>/websocket，完成 DDP connect 握手；
  *   2. 用 username/password 或显式的 DDP resume token 完成 DDP login；
- *   3. 订阅 bot 用户的 stream-notify-user 通知和 rooms-changed 房间更新；
+ *   3. 订阅 stream-room-messages 的 __my_messages__ 通配流（覆盖私信 DM 和频道）；
  *   4. 把收到的新消息以 'message' 事件抛给上层（bot-runner）；
  *   5. 断线后按指数退避自动重连。
  *
@@ -183,9 +183,6 @@ export class RocketRealtimeClient extends EventEmitter {
 
   login() {
     // 优先使用 username + sha256(password) 登录。
-    // 注意：DDP login 的 resume 分支只接受 Meteor login token，
-    // 不接受 Personal Access Token（PAT）——用 PAT 会报 "User not found [401]"。
-    // PAT 只用于 REST 回复（X-Auth-Token），不要塞进 ROCKET_DDP_RESUME_TOKEN。
     if (this.username && this.password) {
       const digest = crypto.createHash('sha256').update(this.password).digest('hex');
       return this.callMethod('login', [
@@ -195,21 +192,26 @@ export class RocketRealtimeClient extends EventEmitter {
         }
       ]);
     }
-    // 兜底：仅当未提供密码时，才用显式配置的登录 authToken 走 resume。
+    // 其次：用 resume token 走 resume 登录。
+    // resume token 可以是 Personal Access Token (PAT)，也可以是登录接口返回的 authToken——
+    // Rocket.Chat 的 DDP login resume 校验的是 services.resume.loginTokens.hashedToken，
+    // PAT 和普通 login token 都存在这个数组里，因此 PAT 可直接用于 resume（与 openclaw 等
+    // 成熟实现一致）。这样纯 PAT（userId + PAT）即可完成 DDP 登录，无需 bot 密码。
     if (this.resumeToken) {
       return this.callMethod('login', [{ resume: this.resumeToken }]);
     }
-    return Promise.reject(new Error('Realtime login requires ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (recommended), or a login authToken in ROCKET_DDP_RESUME_TOKEN'));
+    return Promise.reject(new Error('Realtime login requires ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD, or a resume token (PAT or login authToken) in resumeToken'));
   }
 
   async subscribeNotifications() {
     const uid = this.loggedInUserId;
     if (!uid) throw new Error('Cannot subscribe before login resolves a user id');
 
-    // notification 覆盖频道 @ 提及；rooms-changed 作为私信/房间更新的兜底。
-    // 不同 Rocket.Chat 环境对 DM notification 的推送策略不同，不能只依赖 notification。
-    this.subscribe('stream-notify-user', [`${uid}/notification`, false]);
-    this.subscribe('stream-notify-user', [`${uid}/rooms-changed`, false]);
+    // 订阅 stream-room-messages 的 __my_messages__ 通配流：Rocket.Chat 会把 bot 有权访问的
+    // 所有房间（私信 DM + 频道）的新消息推过来，只校验 canAccessRoom，不依赖 statusConnection
+    // 和用户通知偏好。这解决了部分版本（如 6.2.x）DM 不触发 stream-notify-user/notification
+    // 的问题（presence 异步更新导致 statusConnection 仍为 offline，notification 被跳过）。
+    this.subscribe('stream-room-messages', ['__my_messages__', { useCollection: false, args: [] }]);
   }
 
   subscribe(name, params) {
@@ -254,14 +256,12 @@ export class RocketRealtimeClient extends EventEmitter {
   }
 
   onChanged(payload) {
-    if (payload.collection !== 'stream-notify-user') return;
+    if (payload.collection !== 'stream-room-messages') return;
     const args = payload.fields?.args;
     if (!Array.isArray(args) || args.length === 0) return;
 
-    const eventName = payload.fields?.eventName || '';
-    const event = eventName.endsWith('/rooms-changed')
-      ? parseRoomsChanged(args)
-      : parseNotification(args[0]);
+    // stream-room-messages 的 changed 事件 payload 形如 { fields: { args: [message] } }。
+    const event = parseRoomMessage(args[0]);
     if (event) {
       this.emit('message', event);
     }
@@ -331,25 +331,33 @@ export function parseNotification(notification) {
 }
 
 /**
- * 把 stream-notify-user 的 rooms-changed payload 规整成统一的消息事件。
- * rooms-changed 结构通常形如 { args: ['updated', { _id, t, lastMessage }] }。
+ * 把 stream-room-messages 的 message payload 规整成统一的消息事件。
+ * message 结构形如：
+ *   { _id, rid, msg, ts: { $date }, u: { _id, username, name }, tmid, t }
+ *
+ * 注意：stream-room-messages 的消息体里【不含房间类型 room.t】，因此这里无法判断
+ * 是私信还是频道，roomType 留空、isDirect 留 undefined，由上层（bot-runner）用
+ * REST rooms.info 查询并缓存后补齐。
  */
-export function parseRoomsChanged(args) {
-  if (!Array.isArray(args) || args.length < 2) return null;
-  const [changeType, room] = args;
-  if (!['inserted', 'updated'].includes(changeType)) return null;
-  if (!room || typeof room !== 'object') return null;
+export function parseRoomMessage(message) {
+  if (!message || typeof message !== 'object') return null;
 
-  const lastMessage = room.lastMessage || {};
-  const sender = lastMessage.u || lastMessage.sender || {};
-  const roomId = room._id || lastMessage.rid || '';
-  const messageId = lastMessage._id || '';
-  const text = lastMessage.msg || '';
+  const sender = message.u || {};
+  const roomId = message.rid || '';
+  const messageId = message._id || '';
+  const text = message.msg || '';
   const senderId = sender._id || '';
   const senderUsername = sender.username || sender.name || '';
-  const roomType = room.t || lastMessage.roomType || '';
-  const messageType = lastMessage.t || '';
+  const messageType = message.t || '';
   const rawText = String(text || '').trim();
+  // ts 可能是 { $date: <ms> } 或 ISO 字符串；统一转成毫秒时间戳供上层做时间过滤。
+  let ts = 0;
+  if (message.ts && typeof message.ts === 'object' && typeof message.ts.$date === 'number') {
+    ts = message.ts.$date;
+  } else if (message.ts) {
+    const parsed = Date.parse(message.ts);
+    ts = Number.isFinite(parsed) ? parsed : 0;
+  }
 
   if (!roomId || !rawText) return null;
 
@@ -360,9 +368,11 @@ export function parseRoomsChanged(args) {
     rawText: String(text),
     senderId,
     userName: senderUsername,
-    roomType,
+    // roomType / isDirect 由上层用 rooms.info 补齐。
+    roomType: '',
     messageType,
-    isDirect: roomType === 'd',
+    ts,
+    isDirect: undefined,
     isSystem: isSystemMessageType(messageType),
     isAutoReply: isAutoReplyText(rawText)
   };

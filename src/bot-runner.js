@@ -30,10 +30,16 @@ const loopGuard = createLoopGuard({
   maxEvents: config.rocket.loopMaxEvents
 });
 
+// DDP resume token 优先级：显式配置的 ROCKET_DDP_RESUME_TOKEN > REST PAT。
+// PAT 可直接用于 DDP login({ resume })（PAT 和普通 login token 都存在
+// services.resume.loginTokens 里，DDP resume 校验不区分类型），因此纯 PAT
+// （ROCKET_REST_USER_ID + ROCKET_REST_PAT）即可完成登录，无需 bot 密码。
+const ddpResumeToken = config.rocket.ddpResumeToken || config.rocket.restPat;
+
 const realtime = new RocketRealtimeClient({
   url: config.rocket.url,
   userId: config.rocket.userId,
-  resumeToken: config.rocket.ddpResumeToken,
+  resumeToken: ddpResumeToken,
   username: config.rocket.botUsername,
   password: config.rocket.botPassword
 });
@@ -102,6 +108,20 @@ async function handleIncoming(event) {
   // 对通知做去重，避免 Rocket.Chat 通知重发或重连期间重复回复。
   if (hasSeenMessage(event)) return;
   rememberMessage(event);
+
+  // stream-room-messages 的消息体不含房间类型，event.isDirect 为 undefined。
+  // 用 REST rooms.info 查询并缓存后补齐，供下面的私信/频道分流判断。
+  if (event.isDirect === undefined) {
+    try {
+      const roomType = await rocketClient.getRoomType(event.roomId);
+      event.roomType = roomType;
+      event.isDirect = roomType === 'd';
+    } catch (error) {
+      // 查询失败时按频道处理（更保守：频道需 @ 提及，避免误回所有消息）。
+      log('warn', 'bot_room_type_lookup_failed', { roomId: event.roomId, ...errorToMeta(error) });
+      event.isDirect = false;
+    }
+  }
 
   // 判断是否需要响应：私信无条件响应；频道消息要求 @ 提及 bot。
   const mention = config.rocket.botUsername ? `@${config.rocket.botUsername}` : '';

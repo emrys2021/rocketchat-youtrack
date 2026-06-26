@@ -8,6 +8,8 @@ export class RocketClient {
     this.authToken = options.authToken;
     this.messageMaxChars = options.messageMaxChars || 3500;
     this.timeoutMs = options.timeoutMs || 15000;
+    // roomId → 房间类型('c'/'p'/'d'/'l') 缓存；房间类型不变，查一次即可。
+    this._roomTypeCache = new Map();
   }
 
   canPost() {
@@ -37,6 +39,42 @@ export class RocketClient {
       },
       this.timeoutMs
     );
+  }
+
+  /**
+   * 查询房间类型（'c' 频道 / 'p' 私有组 / 'd' 私信 / 'l' livechat）。
+   *
+   * stream-room-messages 推送的消息体不含房间类型，需要用 REST rooms.info 补齐。
+   * 房间类型不会变，按 roomId 缓存，避免每条消息都查一次。
+   *
+   * @param {string} roomId
+   * @returns {Promise<string>} 房间类型字母；查询失败返回空字符串。
+   */
+  async getRoomType(roomId) {
+    if (!roomId) return '';
+    if (this._roomTypeCache.has(roomId)) {
+      return this._roomTypeCache.get(roomId);
+    }
+    if (!this.canPost()) {
+      throw new Error('Rocket.Chat bot credentials are not configured');
+    }
+
+    const url = `${this.baseUrl}/api/v1/rooms.info?roomId=${encodeURIComponent(roomId)}`;
+    const result = await fetchJson(
+      url,
+      {
+        method: 'GET',
+        headers: {
+          'X-Auth-Token': this.authToken,
+          'X-User-Id': this.userId
+        }
+      },
+      this.timeoutMs
+    );
+
+    const roomType = result?.room?.t || '';
+    if (roomType) this._roomTypeCache.set(roomId, roomType);
+    return roomType;
   }
 
   async postMessage({ roomId, text, threadId = undefined, replyInThread = true }) {

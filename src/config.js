@@ -135,8 +135,11 @@ export function validateConfig(mode = 'webhook') {
     if (!config.rocket.url) missing.push('ROCKET_URL');
     const hasPassword = Boolean(config.rocket.botUsername && config.rocket.botPassword);
     const hasResumeToken = Boolean(config.rocket.ddpResumeToken);
-    if (!hasPassword && !hasResumeToken) {
-      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (recommended for bot-login Realtime/DDP login) or ROCKET_DDP_RESUME_TOKEN (login authToken, not PAT)');
+    // 纯 PAT 模式：PAT 可直接用于 DDP login({ resume })，因此 restUserId + restPat
+    // 即可完成 DDP 登录，无需 bot 密码。restUserId 同时是 DDP 自消息过滤所需的 userId。
+    const hasPat = Boolean(config.rocket.restUserId && config.rocket.restPat);
+    if (!hasPassword && !hasResumeToken && !hasPat) {
+      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD, or ROCKET_DDP_RESUME_TOKEN (login authToken), or ROCKET_REST_USER_ID + ROCKET_REST_PAT (PAT works directly for DDP resume)');
     }
   } else {
     if (!config.rocket.webhookToken) missing.push('ROCKET_WEBHOOK_TOKEN');

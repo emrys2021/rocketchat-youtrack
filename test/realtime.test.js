@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseNotification, parseRoomsChanged } from '../src/rocket-realtime.js';
+import { parseNotification, parseRoomMessage } from '../src/rocket-realtime.js';
 
 test('parses a direct message notification', () => {
   const event = parseNotification({
@@ -83,20 +83,14 @@ test('returns null when room or text is missing', () => {
   assert.equal(parseNotification({ payload: { message: { msg: 'hi' } } }), null);
 });
 
-test('parses a direct message from rooms-changed lastMessage', () => {
-  const event = parseRoomsChanged([
-    'updated',
-    {
-      _id: 'roomDM',
-      t: 'd',
-      lastMessage: {
-        _id: 'msg5',
-        rid: 'roomDM',
-        msg: '私聊测试-0626-001',
-        u: { _id: 'u5', username: 'alice' }
-      }
-    }
-  ]);
+test('parses a stream-room-messages message', () => {
+  const event = parseRoomMessage({
+    _id: 'msg5',
+    rid: 'roomDM',
+    msg: '私聊测试-0626-001',
+    ts: { $date: 1750000000000 },
+    u: { _id: 'u5', username: 'alice' }
+  });
 
   assert.ok(event);
   assert.equal(event.roomId, 'roomDM');
@@ -104,13 +98,39 @@ test('parses a direct message from rooms-changed lastMessage', () => {
   assert.equal(event.text, '私聊测试-0626-001');
   assert.equal(event.senderId, 'u5');
   assert.equal(event.userName, 'alice');
-  assert.equal(event.roomType, 'd');
-  assert.equal(event.isDirect, true);
+  assert.equal(event.ts, 1750000000000);
+  // stream-room-messages 消息体不含房间类型，roomType 留空、isDirect 留 undefined，
+  // 由上层用 rooms.info 补齐。
+  assert.equal(event.roomType, '');
+  assert.equal(event.isDirect, undefined);
   assert.equal(event.isSystem, false);
   assert.equal(event.isAutoReply, false);
 });
 
-test('ignores rooms-changed events without a last message body', () => {
-  assert.equal(parseRoomsChanged(['updated', { _id: 'roomDM', t: 'd' }]), null);
-  assert.equal(parseRoomsChanged(['removed', { _id: 'roomDM', t: 'd', lastMessage: { msg: 'x' } }]), null);
+test('marks stream-room-messages system messages and auto-replies', () => {
+  const systemEvent = parseRoomMessage({
+    _id: 'msg6',
+    rid: 'roomCh',
+    msg: 'alice joined',
+    t: 'uj',
+    u: { _id: 'u6', username: 'alice' }
+  });
+  assert.ok(systemEvent);
+  assert.equal(systemEvent.messageType, 'uj');
+  assert.equal(systemEvent.isSystem, true);
+
+  const autoReply = parseRoomMessage({
+    _id: 'msg7',
+    rid: 'roomDM',
+    msg: 'Hey, I received your message and will get back to you as soon as possible.',
+    u: { _id: 'u7', username: 'alice' }
+  });
+  assert.ok(autoReply);
+  assert.equal(autoReply.isAutoReply, true);
+});
+
+test('returns null when stream-room-messages room or text is missing', () => {
+  assert.equal(parseRoomMessage(null), null);
+  assert.equal(parseRoomMessage({ rid: 'roomDM', msg: '' }), null);
+  assert.equal(parseRoomMessage({ msg: 'hi', u: { _id: 'u8' } }), null);
 });
