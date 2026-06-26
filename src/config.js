@@ -49,6 +49,12 @@ function inferYouTrackBaseUrl(mcpUrl) {
   }
 }
 
+const rocketRestUserId = getString('ROCKET_REST_USER_ID');
+const rocketRestPat = getString('ROCKET_REST_PAT');
+const rocketRestLoginAuthToken = getString('ROCKET_REST_LOGIN_AUTH_TOKEN');
+const rocketRestToken = rocketRestPat || rocketRestLoginAuthToken;
+const rocketRestTokenSource = rocketRestPat ? 'pat' : rocketRestLoginAuthToken ? 'login_auth_token' : '';
+const rocketDdpResumeToken = getString('ROCKET_DDP_RESUME_TOKEN');
 export const config = {
   port: getInteger('PORT', 8080),
   nodeEnv: getString('NODE_ENV', 'development'),
@@ -89,8 +95,13 @@ export const config = {
   rocket: {
     webhookToken: getString('ROCKET_WEBHOOK_TOKEN'),
     url: getString('ROCKET_URL'),
-    userId: getString('ROCKET_USER_ID'),
-    authToken: getString('ROCKET_AUTH_TOKEN'),
+    userId: rocketRestUserId,
+    authToken: rocketRestToken,
+    restUserId: rocketRestUserId,
+    restPat: rocketRestPat,
+    restLoginAuthToken: rocketRestLoginAuthToken,
+    restTokenSource: rocketRestTokenSource,
+    ddpResumeToken: rocketDdpResumeToken,
     botUsername: getString('ROCKET_BOT_USERNAME', 'youtrack-bot'),
     botPassword: getString('ROCKET_BOT_PASSWORD'),
     replyInThread: getBoolean('ROCKET_REPLY_IN_THREAD', true),
@@ -123,8 +134,9 @@ export function validateConfig(mode = 'webhook') {
   if (mode === 'bot') {
     if (!config.rocket.url) missing.push('ROCKET_URL');
     const hasPassword = Boolean(config.rocket.botUsername && config.rocket.botPassword);
-    if (!hasPassword) {
-      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (required for bot-login Realtime/DDP login; ROCKET_AUTH_TOKEN/PAT is for REST replies)');
+    const hasResumeToken = Boolean(config.rocket.ddpResumeToken);
+    if (!hasPassword && !hasResumeToken) {
+      missing.push('ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (recommended for bot-login Realtime/DDP login) or ROCKET_DDP_RESUME_TOKEN (login authToken, not PAT)');
     }
   } else {
     if (!config.rocket.webhookToken) missing.push('ROCKET_WEBHOOK_TOKEN');

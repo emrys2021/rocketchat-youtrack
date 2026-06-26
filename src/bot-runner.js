@@ -17,10 +17,10 @@ validateConfig('bot');
 
 if (!config.rocket.userId) {
   // realtime 登录会返回 userId，但回复用的 REST 调用（chat.sendMessage）需要
-  // ROCKET_USER_ID。这里仅提醒：建议为 bot 账户配置 Personal Access Token，
-  // 同时拿到 userId 和 token。
+  // ROCKET_REST_USER_ID。这里仅提醒：建议为 bot 账户配置 Personal Access Token，
+  // 同时拿到 REST User Id 和 PAT。
   log('warn', 'bot_runner_missing_user_id', {
-    note: 'ROCKET_USER_ID 未配置，REST 回复可能失败。建议为 bot 账户配置 Personal Access Token 的 userId/token。'
+    note: 'ROCKET_REST_USER_ID 未配置，REST 回复会等 DDP 登录成功后用登录 token 兜底。生产环境建议配置 bot 账户的 ROCKET_REST_USER_ID + ROCKET_REST_PAT。'
   });
 }
 
@@ -33,14 +33,14 @@ const loopGuard = createLoopGuard({
 const realtime = new RocketRealtimeClient({
   url: config.rocket.url,
   userId: config.rocket.userId,
-  authToken: config.rocket.authToken,
+  resumeToken: config.rocket.ddpResumeToken,
   username: config.rocket.botUsername,
   password: config.rocket.botPassword
 });
 
 // 登录后拿到的 bot 用户 id 用于过滤 DDP 自己发出的消息。
 let realtimeBotUserId = config.rocket.userId || '';
-// REST token 可能属于另一个账号；启动后通过 /api/v1/me 校验并加入自消息过滤。
+// REST PAT 或 REST login authToken 可能属于另一个账号；启动后通过 /api/v1/me 校验并加入自消息过滤。
 let restBotUserId = config.rocket.userId || '';
 let restBotUsername = config.rocket.botUsername || '';
 const seenMessageIds = new Map();
@@ -49,8 +49,8 @@ const maxSeenMessages = 500;
 realtime.on('ready', ({ userId, authToken }) => {
   if (userId) realtimeBotUserId = userId;
 
-  // 没有单独配置 PAT（ROCKET_USER_ID / ROCKET_AUTH_TOKEN）时，
-  // 用 realtime 登录返回的 userId/token 兜底，让 bot 仍能通过 REST 发回复。
+  // 没有配置 REST 回复凭据（ROCKET_REST_USER_ID + ROCKET_REST_PAT/ROCKET_REST_LOGIN_AUTH_TOKEN）时，
+  // 用本次 DDP 登录返回的 userId/token 兜底，让 bot 仍能通过 REST 发回复。
   if (!rocketClient.canPost()) {
     rocketClient.setCredentials({ userId, authToken });
     if (rocketClient.canPost()) {
@@ -64,7 +64,7 @@ realtime.on('ready', ({ userId, authToken }) => {
     log('warn', 'bot_login_identity_mismatch', {
       configuredUserId: config.rocket.userId,
       loginUserId: userId,
-      recommendation: 'ROCKET_USER_ID should belong to the same bot account as ROCKET_BOT_USERNAME/ROCKET_BOT_PASSWORD.'
+      recommendation: 'ROCKET_REST_USER_ID should belong to the same bot account used for DDP login.'
     });
   }
 
@@ -74,7 +74,8 @@ realtime.on('ready', ({ userId, authToken }) => {
     canPost: rocketClient.canPost(),
     rocketLoopWindowMs: config.rocket.loopWindowMs,
     rocketLoopMaxEvents: config.rocket.loopMaxEvents,
-    rocketIgnoreAutoReplies: config.rocket.ignoreAutoReplies
+    rocketIgnoreAutoReplies: config.rocket.ignoreAutoReplies,
+    rocketRestTokenSource: config.rocket.restTokenSource || 'ddp_login_fallback_after_ready'
   });
 
   void validateRestBotIdentity(userId);
@@ -192,13 +193,13 @@ async function validateRestBotIdentity(loginUserId = '') {
       loginUserIdMismatch,
       configuredUsernameMismatch,
       recommendation: loginUserIdMismatch || configuredUsernameMismatch
-        ? 'Use the same Rocket.Chat bot account for DDP login and REST replies, and update ROCKET_BOT_USERNAME/ROCKET_USER_ID.'
+        ? 'Use the same Rocket.Chat bot account for DDP login and REST replies, and update ROCKET_BOT_USERNAME/ROCKET_REST_USER_ID.'
         : undefined
     });
   } catch (error) {
     log('warn', 'bot_rest_identity_check_failed', {
       ...errorToMeta(error),
-      recommendation: 'Check ROCKET_URL, ROCKET_USER_ID, and ROCKET_AUTH_TOKEN. Self-message filtering will fall back to configured values.'
+      recommendation: 'Check ROCKET_URL, ROCKET_REST_USER_ID, and ROCKET_REST_PAT or ROCKET_REST_LOGIN_AUTH_TOKEN. Self-message filtering will fall back to configured values.'
     });
   }
 }

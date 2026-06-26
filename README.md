@@ -27,10 +27,10 @@ Both modes share dependency wiring through `src/runtime.js` and reply through th
 ## Flow (bot-login realtime mode)
 
 1. The bot opens a WebSocket to `ws(s)://<rocket-host>/websocket` and completes the DDP `connect` handshake (`src/rocket-realtime.js`).
-2. It logs in with `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` (DDP login does not accept a Personal Access Token).
+2. It logs in with `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` by default. Advanced deployments may use `ROCKET_DDP_RESUME_TOKEN`, which must be a login authToken, not a Personal Access Token.
 3. It subscribes to `stream-notify-user` `<userId>/notification`, which Rocket.Chat pushes for **direct messages** and **channel @mentions** of the bot.
 4. `src/bot-runner.js` filters out the bot's own messages, Rocket.Chat Auto-Reply/system messages, and loop-like repeated room events; it requires an `@youtrack-bot` mention in channels (direct messages need none), strips the mention, and calls `agent.answer()`.
-5. The answer is posted back to the original room/thread with the REST client, reusing message splitting and threaded replies.
+5. The answer is posted back to the original room/thread with the REST client, using `ROCKET_REST_USER_ID` plus either `ROCKET_REST_PAT` (recommended) or `ROCKET_REST_LOGIN_AUTH_TOKEN`.
 6. On disconnect it reconnects automatically with exponential backoff, then re-logs in and re-subscribes.
 
 ## Required Configuration
@@ -112,8 +112,8 @@ The bot user must be in the target channel to post replies.
 For **bot-login realtime mode** no webhook is needed. Instead:
 
 - create the same bot user, for example `youtrack-bot`
-- set `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` for the WebSocket (DDP) login. A Personal Access Token does **not** work for DDP login (it returns `User not found [401]`); it is only used for REST replies.
-- recommended: create a Personal Access Token for that bot and set `ROCKET_USER_ID` + `ROCKET_AUTH_TOKEN` so REST replies use a stable bot token; otherwise the service falls back to the DDP login token after startup
+- set `ROCKET_BOT_USERNAME` + `ROCKET_BOT_PASSWORD` for the WebSocket (DDP) login. A Personal Access Token does **not** work for DDP login. If you deliberately use token resume, set `ROCKET_DDP_RESUME_TOKEN` to a login authToken, not a PAT.
+- recommended: create a Personal Access Token for that bot and set `ROCKET_REST_USER_ID` + `ROCKET_REST_PAT` so REST replies use a stable bot token. If you do not want PAT, set `ROCKET_REST_USER_ID` + `ROCKET_REST_LOGIN_AUTH_TOKEN` using the login API authToken. If neither REST token is set, the service falls back to the DDP login token after startup.
 - set `ROCKET_URL` to the Rocket.Chat base URL (the WebSocket URL is derived as `<url>/websocket`)
 - invite the bot to any channel where it should answer; users mention it with `@youtrack-bot`, or message it directly
 
@@ -122,7 +122,7 @@ Start it with `npm run start:bot`.
 Direct-message safety:
 
 - keep `ROCKET_IGNORE_AUTO_REPLIES=true` so Rocket.Chat user Auto-Reply messages are ignored
-- keep `ROCKET_BOT_USERNAME` and `ROCKET_USER_ID` aligned with the same bot account; bot-login logs `bot_rest_identity_checked` at startup and warns on mismatch
+- keep `ROCKET_BOT_USERNAME` and `ROCKET_REST_USER_ID` aligned with the same bot account; bot-login logs `bot_rest_identity_checked` at startup and warns on mismatch
 - if `bot_loop_guard_tripped` or `rocket_loop_guard_tripped` appears in logs, check whether a user Auto-Reply is responding to bot messages and whether REST replies are posted by the expected bot account
 - `ROCKET_LOOP_WINDOW_MS` and `ROCKET_LOOP_MAX_EVENTS` control the per-room loop guard; defaults are `60000` and `4`
 - `ROCKET_MESSAGE_DEDUPE_TTL_MS` ignores repeated delivery of the same Rocket.Chat `message_id`; default is `600000`

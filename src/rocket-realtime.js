@@ -9,7 +9,7 @@ import { isAutoReplyText, isSystemMessageType } from './message-filters.js';
  *
  * 负责：
  *   1. 连接 ws(s)://<host>/websocket，完成 DDP connect 握手；
- *   2. 用 resume token 或 username/password 完成 DDP login；
+ *   2. 用 username/password 或显式的 DDP resume token 完成 DDP login；
  *   3. 订阅 bot 用户的 stream-notify-user 通知（覆盖私信 DM 和 @ 提及）；
  *   4. 把收到的新消息以 'message' 事件抛给上层（bot-runner）；
  *   5. 断线后按指数退避自动重连。
@@ -22,7 +22,7 @@ export class RocketRealtimeClient extends EventEmitter {
     super();
     this.baseUrl = (options.url || '').replace(/\/$/, '');
     this.userId = options.userId || '';
-    this.authToken = options.authToken || '';
+    this.resumeToken = options.resumeToken || '';
     this.username = options.username || '';
     this.password = options.password || '';
     this.heartbeatMs = options.heartbeatMs || 25000;
@@ -185,7 +185,7 @@ export class RocketRealtimeClient extends EventEmitter {
     // 优先使用 username + sha256(password) 登录。
     // 注意：DDP login 的 resume 分支只接受 Meteor login token，
     // 不接受 Personal Access Token（PAT）——用 PAT 会报 "User not found [401]"。
-    // PAT 只用于 REST 回复（X-Auth-Token），不要塞进 ROCKET_AUTH_TOKEN 当 resume 用。
+    // PAT 只用于 REST 回复（X-Auth-Token），不要塞进 ROCKET_DDP_RESUME_TOKEN。
     if (this.username && this.password) {
       const digest = crypto.createHash('sha256').update(this.password).digest('hex');
       return this.callMethod('login', [
@@ -195,11 +195,11 @@ export class RocketRealtimeClient extends EventEmitter {
         }
       ]);
     }
-    // 兜底：仅当未提供密码时，才把 ROCKET_AUTH_TOKEN 当作 login token 走 resume。
-    if (this.authToken) {
-      return this.callMethod('login', [{ resume: this.authToken }]);
+    // 兜底：仅当未提供密码时，才用显式配置的登录 authToken 走 resume。
+    if (this.resumeToken) {
+      return this.callMethod('login', [{ resume: this.resumeToken }]);
     }
-    return Promise.reject(new Error('Realtime login requires ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (recommended), or a Meteor login token in ROCKET_AUTH_TOKEN'));
+    return Promise.reject(new Error('Realtime login requires ROCKET_BOT_USERNAME + ROCKET_BOT_PASSWORD (recommended), or a login authToken in ROCKET_DDP_RESUME_TOKEN'));
   }
 
   async subscribeNotifications() {
