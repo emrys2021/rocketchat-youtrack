@@ -10,7 +10,7 @@ import { isAutoReplyText, isSystemMessageType } from './message-filters.js';
  * 负责：
  *   1. 连接 ws(s)://<host>/websocket，完成 DDP connect 握手；
  *   2. 用 username/password 或显式的 DDP resume token 完成 DDP login；
- *   3. 订阅 bot 用户的 stream-notify-user 通知（覆盖私信 DM 和 @ 提及）；
+ *   3. 订阅 bot 用户的 stream-notify-user 通知和 rooms-changed 房间更新；
  *   4. 把收到的新消息以 'message' 事件抛给上层（bot-runner）；
  *   5. 断线后按指数退避自动重连。
  *
@@ -206,9 +206,10 @@ export class RocketRealtimeClient extends EventEmitter {
     const uid = this.loggedInUserId;
     if (!uid) throw new Error('Cannot subscribe before login resolves a user id');
 
-    // stream-notify-user 的 notification 事件覆盖私信(DM)和频道 @ 提及，
-    // Rocket.Chat 会把需要提醒该用户的新消息推到这里。
+    // notification 覆盖频道 @ 提及；rooms-changed 作为私信/房间更新的兜底。
+    // 不同 Rocket.Chat 环境对 DM notification 的推送策略不同，不能只依赖 notification。
     this.subscribe('stream-notify-user', [`${uid}/notification`, false]);
+    this.subscribe('stream-notify-user', [`${uid}/rooms-changed`, false]);
   }
 
   subscribe(name, params) {
@@ -257,9 +258,10 @@ export class RocketRealtimeClient extends EventEmitter {
     const args = payload.fields?.args;
     if (!Array.isArray(args) || args.length === 0) return;
 
-    // notification 事件的 payload 形如 { args: [ notification ] }。
-    const notification = args[0];
-    const event = parseNotification(notification);
+    const eventName = payload.fields?.eventName || '';
+    const event = eventName.endsWith('/rooms-changed')
+      ? parseRoomsChanged(args)
+      : parseNotification(args[0]);
     if (event) {
       this.emit('message', event);
     }
@@ -323,6 +325,44 @@ export function parseNotification(notification) {
     roomType,
     messageType,
     isDirect,
+    isSystem: isSystemMessageType(messageType),
+    isAutoReply: isAutoReplyText(rawText)
+  };
+}
+
+/**
+ * 把 stream-notify-user 的 rooms-changed payload 规整成统一的消息事件。
+ * rooms-changed 结构通常形如 { args: ['updated', { _id, t, lastMessage }] }。
+ */
+export function parseRoomsChanged(args) {
+  if (!Array.isArray(args) || args.length < 2) return null;
+  const [changeType, room] = args;
+  if (!['inserted', 'updated'].includes(changeType)) return null;
+  if (!room || typeof room !== 'object') return null;
+
+  const lastMessage = room.lastMessage || {};
+  const sender = lastMessage.u || lastMessage.sender || {};
+  const roomId = room._id || lastMessage.rid || '';
+  const messageId = lastMessage._id || '';
+  const text = lastMessage.msg || '';
+  const senderId = sender._id || '';
+  const senderUsername = sender.username || sender.name || '';
+  const roomType = room.t || lastMessage.roomType || '';
+  const messageType = lastMessage.t || '';
+  const rawText = String(text || '').trim();
+
+  if (!roomId || !rawText) return null;
+
+  return {
+    roomId,
+    messageId,
+    text: rawText,
+    rawText: String(text),
+    senderId,
+    userName: senderUsername,
+    roomType,
+    messageType,
+    isDirect: roomType === 'd',
     isSystem: isSystemMessageType(messageType),
     isAutoReply: isAutoReplyText(rawText)
   };

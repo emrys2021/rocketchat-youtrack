@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseNotification } from '../src/rocket-realtime.js';
+import { parseNotification, parseRoomsChanged } from '../src/rocket-realtime.js';
 
 test('parses a direct message notification', () => {
   const event = parseNotification({
@@ -81,4 +81,36 @@ test('returns null when room or text is missing', () => {
   assert.equal(parseNotification(null), null);
   assert.equal(parseNotification({ payload: { rid: 'r', message: {} } }), null);
   assert.equal(parseNotification({ payload: { message: { msg: 'hi' } } }), null);
+});
+
+test('parses a direct message from rooms-changed lastMessage', () => {
+  const event = parseRoomsChanged([
+    'updated',
+    {
+      _id: 'roomDM',
+      t: 'd',
+      lastMessage: {
+        _id: 'msg5',
+        rid: 'roomDM',
+        msg: '私聊测试-0626-001',
+        u: { _id: 'u5', username: 'alice' }
+      }
+    }
+  ]);
+
+  assert.ok(event);
+  assert.equal(event.roomId, 'roomDM');
+  assert.equal(event.messageId, 'msg5');
+  assert.equal(event.text, '私聊测试-0626-001');
+  assert.equal(event.senderId, 'u5');
+  assert.equal(event.userName, 'alice');
+  assert.equal(event.roomType, 'd');
+  assert.equal(event.isDirect, true);
+  assert.equal(event.isSystem, false);
+  assert.equal(event.isAutoReply, false);
+});
+
+test('ignores rooms-changed events without a last message body', () => {
+  assert.equal(parseRoomsChanged(['updated', { _id: 'roomDM', t: 'd' }]), null);
+  assert.equal(parseRoomsChanged(['removed', { _id: 'roomDM', t: 'd', lastMessage: { msg: 'x' } }]), null);
 });
