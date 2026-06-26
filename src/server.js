@@ -8,6 +8,7 @@ import { RocketClient } from './rocket.js';
 import { YouTrackAgent } from './agent.js';
 import { YouTrackRestClient } from './youtrack-rest.js';
 import { createLoopGuard } from './loop-guard.js';
+import { createMessageDeduper } from './message-dedupe.js';
 import { errorToMeta, log } from './logger.js';
 import { extractRocketEvent, shouldReplyViaBot, verifyRocketRequest } from './webhook.js';
 
@@ -30,6 +31,10 @@ const agent = new YouTrackAgent({ llmClient, mcpClient, youtrackRestClient, conf
 const loopGuard = createLoopGuard({
   windowMs: config.rocket.loopWindowMs,
   maxEvents: config.rocket.loopMaxEvents
+});
+const messageDeduper = createMessageDeduper({
+  ttlMs: config.rocket.messageDedupeTtlMs,
+  maxEntries: config.rocket.messageDedupeMaxEntries
 });
 let rocketBotIdentity = {
   username: config.rocket.botUsername,
@@ -126,6 +131,19 @@ async function handleRocketWebhook(req, res) {
       messageId: event.messageId
     });
     return sendJson(res, 200, { ok: true, ignored: true, reason: ignoreReason });
+  }
+
+  const dedupeState = messageDeduper.checkAndRemember(event.messageId);
+  if (dedupeState.duplicate) {
+    log('info', 'rocket_message_duplicate_ignored', {
+      roomId: event.roomId,
+      roomName: event.roomName,
+      userName: event.userName,
+      userId: event.userId,
+      messageId: event.messageId,
+      dedupeTtlMs: config.rocket.messageDedupeTtlMs
+    });
+    return sendJson(res, 200, { ok: true, ignored: true, reason: 'duplicate_message' });
   }
 
   const loopState = loopGuard.record(event);
@@ -263,7 +281,9 @@ server.listen(config.port, () => {
     youtrackRestWorkItems: youtrackRestClient.canFetchWorkItems(),
     rocketLoopWindowMs: config.rocket.loopWindowMs,
     rocketLoopMaxEvents: config.rocket.loopMaxEvents,
-    rocketIgnoreAutoReplies: config.rocket.ignoreAutoReplies
+    rocketIgnoreAutoReplies: config.rocket.ignoreAutoReplies,
+    rocketMessageDedupeTtlMs: config.rocket.messageDedupeTtlMs,
+    rocketMessageDedupeMaxEntries: config.rocket.messageDedupeMaxEntries
   });
   void validateRocketBotIdentity();
 });

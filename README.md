@@ -95,6 +95,8 @@ Direct-message safety:
 - keep `ROCKET_BOT_USERNAME` and `ROCKET_USER_ID` aligned with the bot token user; the service logs `rocket_bot_identity_checked` at startup and warns on mismatch
 - if `rocket_loop_guard_tripped` appears in logs, narrow the outgoing webhook trigger scope and check whether a user Auto-Reply is responding to bot messages
 - `ROCKET_LOOP_WINDOW_MS` and `ROCKET_LOOP_MAX_EVENTS` control the per-room loop guard; defaults are `60000` and `4`
+- `ROCKET_MESSAGE_DEDUPE_TTL_MS` ignores repeated delivery of the same Rocket.Chat `message_id`; default is `600000`
+
 ## Container Deployment
 
 ```bash

@@ -96,7 +96,9 @@ export const config = {
     timeoutMs: getInteger('ROCKET_TIMEOUT_MS', 15000),
     ignoreAutoReplies: getBoolean('ROCKET_IGNORE_AUTO_REPLIES', true),
     loopWindowMs: getInteger('ROCKET_LOOP_WINDOW_MS', 60000),
-    loopMaxEvents: getInteger('ROCKET_LOOP_MAX_EVENTS', 4)
+    loopMaxEvents: getInteger('ROCKET_LOOP_MAX_EVENTS', 4),
+    messageDedupeTtlMs: getInteger('ROCKET_MESSAGE_DEDUPE_TTL_MS', 10 * 60 * 1000),
+    messageDedupeMaxEntries: getInteger('ROCKET_MESSAGE_DEDUPE_MAX_ENTRIES', 1000)
   }
 };
 
