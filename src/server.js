@@ -6,6 +6,7 @@ import { isToolAllowed } from './mcp.js';
 import { buildRuntime } from './runtime.js';
 import { createLoopGuard } from './loop-guard.js';
 import { createMessageDeduper } from './message-dedupe.js';
+import { createMessageAdmission } from './message-admission.js';
 import { errorToMeta, log } from './logger.js';
 import { extractRocketEvent, shouldReplyViaBot, verifyRocketRequest } from './webhook.js';
 
@@ -19,6 +20,11 @@ const loopGuard = createLoopGuard({
 const messageDeduper = createMessageDeduper({
   ttlMs: config.rocket.messageDedupeTtlMs,
   maxEntries: config.rocket.messageDedupeMaxEntries
+});
+const messageAdmission = createMessageAdmission({
+  deduper: messageDeduper,
+  loopGuard,
+  ignoreAutoReplies: config.rocket.ignoreAutoReplies
 });
 let rocketBotIdentity = {
   username: config.rocket.botUsername,
@@ -104,46 +110,9 @@ async function handleRocketWebhook(req, res) {
   }
 
   const event = extractRocketEvent(body, rocketBotIdentity);
-  const ignoreReason = getIgnoreReason(event);
-  if (ignoreReason) {
-    log('info', 'rocket_message_ignored', {
-      reason: ignoreReason,
-      roomId: event.roomId,
-      roomName: event.roomName,
-      userName: event.userName,
-      userId: event.userId,
-      messageId: event.messageId
-    });
-    return sendJson(res, 200, { ok: true, ignored: true, reason: ignoreReason });
-  }
-
-  const dedupeState = messageDeduper.checkAndRemember(event.messageId);
-  if (dedupeState.duplicate) {
-    log('info', 'rocket_message_duplicate_ignored', {
-      roomId: event.roomId,
-      roomName: event.roomName,
-      userName: event.userName,
-      userId: event.userId,
-      messageId: event.messageId,
-      dedupeTtlMs: config.rocket.messageDedupeTtlMs
-    });
-    return sendJson(res, 200, { ok: true, ignored: true, reason: 'duplicate_message' });
-  }
-
-  const loopState = loopGuard.record(event);
-  if (loopState.blocked) {
-    log('error', 'rocket_loop_guard_tripped', {
-      roomId: event.roomId,
-      roomName: event.roomName,
-      userName: event.userName,
-      userId: event.userId,
-      messageId: event.messageId,
-      count: loopState.count,
-      windowMs: loopState.windowMs,
-      maxEvents: loopState.maxEvents,
-      recommendation: 'Check Rocket.Chat outgoing webhook trigger scope, user auto-reply settings, and ROCKET_BOT_USERNAME/ROCKET_REST_USER_ID.'
-    });
-    return sendJson(res, 200, { ok: true, ignored: true, reason: 'loop_guard' });
+  const admission = messageAdmission.evaluateWebhookMessage(event);
+  if (!admission.accepted) {
+    return sendWebhookAdmissionRejection(res, event, admission);
   }
 
   log('info', 'rocket_question_received', {
@@ -204,12 +173,48 @@ async function answerAndPost(event) {
   }
 }
 
-function getIgnoreReason(event) {
-  if (!event.text) return 'empty_text';
-  if (event.isBot) return 'bot_message';
-  if (event.isSystem) return 'system_message';
-  if (config.rocket.ignoreAutoReplies && event.isAutoReply) return 'auto_reply';
-  return '';
+function sendWebhookAdmissionRejection(res, event, admission) {
+  if (admission.category === 'ignore') {
+    log('info', 'rocket_message_ignored', {
+      reason: admission.reason,
+      roomId: event.roomId,
+      roomName: event.roomName,
+      userName: event.userName,
+      userId: event.userId,
+      messageId: event.messageId
+    });
+    return sendJson(res, 200, { ok: true, ignored: true, reason: admission.reason });
+  }
+
+  if (admission.category === 'dedupe') {
+    log('info', 'rocket_message_duplicate_ignored', {
+      roomId: event.roomId,
+      roomName: event.roomName,
+      userName: event.userName,
+      userId: event.userId,
+      messageId: event.messageId,
+      dedupeTtlMs: config.rocket.messageDedupeTtlMs
+    });
+    return sendJson(res, 200, { ok: true, ignored: true, reason: admission.reason });
+  }
+
+  if (admission.category === 'loop_guard') {
+    const loopState = admission.loopState || {};
+    log('error', 'rocket_loop_guard_tripped', {
+      roomId: event.roomId,
+      roomName: event.roomName,
+      userName: event.userName,
+      userId: event.userId,
+      messageId: event.messageId,
+      count: loopState.count,
+      windowMs: loopState.windowMs,
+      maxEvents: loopState.maxEvents,
+      recommendation: 'Check Rocket.Chat outgoing webhook trigger scope, user auto-reply settings, and ROCKET_BOT_USERNAME/ROCKET_REST_USER_ID.'
+    });
+    return sendJson(res, 200, { ok: true, ignored: true, reason: admission.reason });
+  }
+
+  return sendJson(res, 200, { ok: true, ignored: true, reason: admission.reason });
 }
 
 async function validateRocketBotIdentity() {

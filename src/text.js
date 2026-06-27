@@ -13,14 +13,17 @@ export function redactSecrets(text) {
 }
 
 export function splitMessage(text, maxChars) {
-  if (text.length <= maxChars) return [text];
-  const chunks = [];
-  let remaining = text;
+  const source = String(text || '');
+  const limit = Number.isFinite(maxChars) && maxChars > 0 ? Math.floor(maxChars) : 3500;
+  if (source.length <= limit) return [source];
 
-  while (remaining.length > maxChars) {
-    let cut = remaining.lastIndexOf('\n', maxChars);
-    if (cut < Math.floor(maxChars * 0.5)) cut = remaining.lastIndexOf(' ', maxChars);
-    if (cut < Math.floor(maxChars * 0.5)) cut = maxChars;
+  const chunks = [];
+  let remaining = source;
+
+  while (remaining.length > limit) {
+    let cut = remaining.lastIndexOf('\n', limit);
+    if (cut < Math.floor(limit * 0.5)) cut = remaining.lastIndexOf(' ', limit);
+    if (cut < Math.floor(limit * 0.5)) cut = limit;
 
     chunks.push(remaining.slice(0, cut).trim());
     remaining = remaining.slice(cut).trim();

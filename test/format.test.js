@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRocketMarkdown } from '../src/text.js';
+import { normalizeRocketMarkdown, splitMessage } from '../src/text.js';
 
 test('converts Markdown tables to fenced text blocks for Rocket.Chat', () => {
   const input = [
@@ -22,4 +22,13 @@ test('converts Markdown tables to fenced text blocks for Rocket.Chat', () => {
 test('does not rewrite tables already inside fenced code blocks', () => {
   const input = ['```text', '| a | b |', '|---|---|', '```'].join('\n');
   assert.equal(normalizeRocketMarkdown(input), input);
+});
+
+test('splitMessage falls back to a safe limit for invalid max chars', () => {
+  const text = 'x'.repeat(3601);
+  const chunks = splitMessage(text, 0);
+
+  assert.equal(chunks.length, 2);
+  assert.equal(chunks.join('').length, text.length);
+  assert.ok(chunks.every((chunk) => chunk.length <= 3500));
 });

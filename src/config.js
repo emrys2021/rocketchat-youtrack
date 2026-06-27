@@ -106,7 +106,7 @@ export const config = {
     botPassword: getString('ROCKET_BOT_PASSWORD'),
     replyInThread: getBoolean('ROCKET_REPLY_IN_THREAD', true),
     postProgress: getBoolean('ROCKET_POST_PROGRESS', true),
-    messageMaxChars: getInteger('ROCKET_MESSAGE_MAX_CHARS', 3500),
+    messageMaxChars: Math.max(500, getInteger('ROCKET_MESSAGE_MAX_CHARS', 3500)),
     timeoutMs: getInteger('ROCKET_TIMEOUT_MS', 15000),
     ignoreAutoReplies: getBoolean('ROCKET_IGNORE_AUTO_REPLIES', true),
     loopWindowMs: getInteger('ROCKET_LOOP_WINDOW_MS', 60000),

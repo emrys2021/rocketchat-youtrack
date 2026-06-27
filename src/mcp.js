@@ -2,6 +2,14 @@ import { HttpError } from './http.js';
 import { log } from './logger.js';
 import { redactSecrets, truncateText } from './text.js';
 
+export const DEFAULT_READ_ONLY_TOOL_NAMES = [
+  'search_issues',
+  'get_issue',
+  'get_issue_comments',
+  'search_articles',
+  'get_article'
+];
+
 function buildAuthValue(authScheme, apiKey) {
   if (!apiKey) return '';
   if (!authScheme) return apiKey;
@@ -68,6 +76,7 @@ export class McpHttpClient {
     this.sessionId = undefined;
     this.negotiatedProtocolVersion = this.protocolVersion;
     this.initialized = false;
+    this.initPromise = null;
     this.nextId = 1;
     this.toolsCache = null;
     this.toolsCacheExpiresAt = 0;
@@ -75,7 +84,16 @@ export class McpHttpClient {
 
   async initialize() {
     if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
 
+    this.initPromise = this.performInitialize().finally(() => {
+      this.initPromise = null;
+    });
+
+    return this.initPromise;
+  }
+
+  async performInitialize() {
     const result = await this.sendRpc('initialize', {
       protocolVersion: this.protocolVersion,
       capabilities: {},
@@ -229,9 +247,14 @@ export class McpHttpClient {
   }
 }
 
+export function getEffectiveAllowedTools(allowedTools = []) {
+  return Array.isArray(allowedTools) && allowedTools.length > 0 ? allowedTools : DEFAULT_READ_ONLY_TOOL_NAMES;
+}
+
 export function isToolAllowed(tool, allowedTools, blockedWords) {
-  if (allowedTools.length > 0) {
-    return allowedTools.includes(tool.name);
+  const effectiveAllowedTools = getEffectiveAllowedTools(allowedTools);
+  if (effectiveAllowedTools.length > 0) {
+    return effectiveAllowedTools.includes(tool.name);
   }
 
   const haystack = `${tool.name || ''} ${tool.title || ''} ${tool.description || ''}`.toLowerCase();
