@@ -1,4 +1,5 @@
 import { errorToMeta } from './logger.js';
+import { buildQuestionLogFields } from './question-logging.js';
 
 export function createBotMessageHandler({
   agent,
@@ -6,6 +7,7 @@ export function createBotMessageHandler({
   messageAdmission,
   identityManager,
   rocketConfig,
+  loggingConfig = {},
   getActiveMessageStreamMode,
   resolveRoomType,
   onRoomTypeLookupFailed,
@@ -33,7 +35,8 @@ export function createBotMessageHandler({
       userName: admittedEvent.userName,
       isDirect: admittedEvent.isDirect,
       source: admittedEvent.source,
-      activeMessageStreamMode: getActiveMessageStreamMode()
+      activeMessageStreamMode: getActiveMessageStreamMode(),
+      ...buildQuestionLogFields(question, loggingConfig)
     });
 
     const replyContext = {

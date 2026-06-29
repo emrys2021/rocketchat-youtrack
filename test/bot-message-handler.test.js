@@ -55,6 +55,7 @@ test('bot message handler answers accepted channel messages in thread', async ()
   assert.equal(posts[1].text, '这里是答案');
   assert.equal(posts[1].threadId, 'm1');
   assert.equal(log.entries[0].message, 'bot_question_received');
+  assert.equal(Object.hasOwn(log.entries[0].meta, 'questionPreview'), false);
 });
 
 test('bot message handler does not thread direct message replies', async () => {
@@ -148,4 +149,35 @@ test('bot message handler uses normalized admission event for reply context', as
   }]);
   assert.equal(log.entries[0].meta.roomId, 'dm-normalized');
   assert.equal(log.entries[0].meta.isDirect, true);
+});
+
+test('bot message handler logs question preview only when enabled', async () => {
+  const log = createLog();
+  const handler = createBotMessageHandler({
+    agent: { answer: async () => 'answer' },
+    rocketClient: { postMessage: async () => {} },
+    messageAdmission: {
+      evaluateRealtimeMessage: async () => ({
+        accepted: true,
+        question: '请查 token: secret-value 的类似 issue',
+        event: { roomId: 'dm-room', messageId: 'm-preview', userName: 'alice', isDirect: true }
+      })
+    },
+    identityManager: {
+      getIdentity: () => ({ realtimeBotUserId: 'bot-id', restBotUserId: 'bot-id', configuredBotUsername: 'bot', restBotUsername: 'bot' }),
+      getMentionName: () => 'bot'
+    },
+    rocketConfig: { postProgress: false, replyInThread: true },
+    loggingConfig: { logUserQuestion: true, logUserQuestionMaxChars: 20 },
+    getActiveMessageStreamMode: () => 'my_messages',
+    resolveRoomType: async () => 'd',
+    onRoomTypeLookupFailed: () => {},
+    log
+  });
+
+  await handler.handleIncoming({ roomId: 'dm-room', messageId: 'm-preview', userName: 'alice', isDirect: true });
+
+  assert.equal(log.entries[0].message, 'bot_question_received');
+  assert.match(log.entries[0].meta.questionPreview, /token: \[redacted\]/);
+  assert.equal(log.entries[0].meta.questionPreview.includes('secret-value'), false);
 });

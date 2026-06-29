@@ -60,6 +60,11 @@ export const config = {
   nodeEnv: getString('NODE_ENV', 'development'),
   adminToken: getString('ADMIN_TOKEN'),
 
+  logging: {
+    logUserQuestion: getBoolean('LOG_USER_QUESTION', false),
+    logUserQuestionMaxChars: Math.max(50, getInteger('LOG_USER_QUESTION_MAX_CHARS', 500))
+  },
+
   llm: {
     apiUrl: getString('LLM_API_URL'),
     apiKey: getString('LLM_API_KEY'),

@@ -8,6 +8,7 @@ import { createLoopGuard } from './loop-guard.js';
 import { createMessageDeduper } from './message-dedupe.js';
 import { createMessageAdmission } from './message-admission.js';
 import { errorToMeta, log } from './logger.js';
+import { buildQuestionLogFields } from './question-logging.js';
 import { extractRocketEvent, shouldReplyViaBot, verifyRocketRequest } from './webhook.js';
 
 validateConfig();
@@ -120,7 +121,8 @@ async function handleRocketWebhook(req, res) {
     roomName: event.roomName,
     userName: event.userName,
     userId: event.userId,
-    messageId: event.messageId
+    messageId: event.messageId,
+    ...buildQuestionLogFields(event.text, config.logging)
   });
 
   if (shouldReplyViaBot()) {

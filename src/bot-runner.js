@@ -83,6 +83,7 @@ messageHandler = createBotMessageHandler({
   messageAdmission,
   identityManager,
   rocketConfig: config.rocket,
+  loggingConfig: config.logging,
   getActiveMessageStreamMode: () => streamManager.getActiveMode(),
   resolveRoomType,
   onRoomTypeLookupFailed,
