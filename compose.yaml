@@ -8,5 +8,9 @@ services:
     container_name: youtrack-rocket-bot
     restart: unless-stopped
     command: node src/bot-runner.js
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+    volumes:
+      - ../certs/ca.crt:/certs/ca.crt:ro
     env_file:
       - .env
